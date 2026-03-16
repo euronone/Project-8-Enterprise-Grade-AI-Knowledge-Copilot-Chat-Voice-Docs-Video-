@@ -1,0 +1,45 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [development]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push backend image
+        run: |
+          docker build -t ${{ steps.ecr.outputs.registry }}/knowledgeforge-backend:${{ github.sha }} ./backend
+          docker push ${{ steps.ecr.outputs.registry }}/knowledgeforge-backend:${{ github.sha }}
+
+      - name: Build and push frontend image
+        run: |
+          docker build -t ${{ steps.ecr.outputs.registry }}/knowledgeforge-frontend:${{ github.sha }} ./frontend
+          docker push ${{ steps.ecr.outputs.registry }}/knowledgeforge-frontend:${{ github.sha }}
+
+      - name: Update Kubernetes manifests
+        run: |
+          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" infrastructure/kubernetes/apps/*/deployment.yaml
+
+      - name: Commit and push manifest changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add infrastructure/kubernetes/
+          git commit -m "chore: update image tags to ${{ github.sha }}" || true
+          git push
