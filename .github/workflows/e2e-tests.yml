@@ -13,8 +13,13 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Docker info
+        run: |
+          docker --version
+          docker compose version
+
       - name: Start services
-        run: docker-compose up -d
+        run: docker compose up -d
 
       - name: Wait for services
         run: sleep 30
@@ -34,4 +39,4 @@ jobs:
 
       - name: Stop services
         if: always()
-        run: docker-compose down
+        run: docker compose down
