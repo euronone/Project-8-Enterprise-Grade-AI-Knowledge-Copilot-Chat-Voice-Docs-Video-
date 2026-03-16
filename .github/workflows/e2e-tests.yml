@@ -18,6 +18,9 @@ jobs:
           docker --version
           docker compose version
 
+      - name: Prepare backend env for CI
+        run: cp backend/.env.example backend/.env
+
       - name: Start services
         run: docker compose up -d
 
@@ -25,7 +28,7 @@ jobs:
         run: sleep 30
 
       - name: Install Playwright
-        run: cd frontend && npm ci && npx playwright install --with-deps
+        run: cd frontend && npm install && npx playwright install --with-deps
 
       - name: Run E2E tests
         run: cd frontend && npx playwright test
