@@ -1,4 +1,6 @@
-﻿export function Placeholder() {
-  return <div>placeholder</div>;
+﻿import type { ReactNode } from "react";
+
+export default function AdminLayout({ children }: { children: ReactNode }) {
+  return <div>{children}</div>;
 }
 

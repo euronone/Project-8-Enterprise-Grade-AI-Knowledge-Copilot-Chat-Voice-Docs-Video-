@@ -64,6 +64,7 @@
     "@vitejs/plugin-react": "^4.2.0",
     "@testing-library/react": "^14.2.0",
     "@testing-library/jest-dom": "^6.4.0",
+    "jsdom": "^24.0.0",
     "@playwright/test": "^1.42.0"
   }
 }
