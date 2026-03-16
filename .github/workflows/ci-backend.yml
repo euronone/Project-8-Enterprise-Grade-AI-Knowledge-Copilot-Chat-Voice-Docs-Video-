@@ -16,7 +16,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install ruff mypy
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install fastapi pydantic
+          cd backend
+          python -m pip install -e ".[dev]"
       - run: cd backend && ruff check .
       - run: cd backend && mypy app/
 
@@ -41,7 +46,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: cd backend && pip install -e ".[dev]"
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install fastapi pydantic
+          cd backend
+          python -m pip install -e ".[dev]"
       - run: cd backend && pytest --cov=app --cov-report=xml
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test_knowledgeforge
