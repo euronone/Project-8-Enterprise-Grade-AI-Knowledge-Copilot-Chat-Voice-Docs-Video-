@@ -1,0 +1,41 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main, development]
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Semgrep SAST
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: p/owasp-top-ten
+
+  container-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t knowledgeforge-backend ./backend
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: knowledgeforge-backend
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+
+  infrastructure-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infrastructure/terraform/
+          framework: terraform
