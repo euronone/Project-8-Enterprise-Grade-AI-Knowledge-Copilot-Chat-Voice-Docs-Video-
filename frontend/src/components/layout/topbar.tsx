@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { Bell, Search, SidebarIcon } from "lucide-react";
+import { Bell, Search, SidebarIcon, Building2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui";
 import { useUiStore } from "@/stores/ui-store";
 
@@ -8,20 +8,73 @@ export function Topbar() {
   const { toggleSidebar } = useUiStore();
 
   return (
-    <header className="h-14 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70 px-4 flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" onClick={toggleSidebar} aria-label="Toggle sidebar">
-          <SidebarIcon className="h-4 w-4" />
-        </Button>
-        <div className="hidden md:flex items-center gap-2 rounded-md border px-3 h-9 text-sm text-muted-foreground min-w-[260px]">
-          <Search className="h-4 w-4" />
-          <span>Search knowledge, docs, chats...</span>
+    <header className="topbar">
+      {/* Left Section - Sidebar Toggle & Search */}
+      <div className="topbar-left">
+        {/* Sidebar Toggle */}
+        <button
+          onClick={toggleSidebar}
+          className="topbar-toggle"
+          aria-label="Toggle sidebar"
+          title="Toggle sidebar"
+        >
+          <SidebarIcon className="topbar-icon" />
+        </button>
+
+        {/* Search Bar */}
+        <div className="topbar-search-wrapper">
+          <Search className="topbar-search-icon" />
+          <input
+            type="text"
+            className="topbar-search-input"
+            placeholder="Search knowledge, docs, chats..."
+            aria-label="Search"
+          />
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" aria-label="Notifications">
-          <Bell className="h-4 w-4" />
-        </Button>
+
+      {/* Right Section - Organization, Notifications & User Profile */}
+      <div className="topbar-right">
+        {/* Organization Switcher */}
+        <button
+          className="topbar-org-switcher"
+          title="Switch organization"
+          aria-label="Switch organization"
+        >
+          <Building2 className="topbar-org-icon" />
+          <span className="topbar-org-label">Acme Corp</span>
+          <ChevronDown className="topbar-org-chevron" />
+        </button>
+
+        {/* Notifications Button */}
+        <button
+          className="topbar-action-btn relative"
+          title="Notifications"
+          aria-label="Notifications"
+        >
+          <Bell className="topbar-icon" />
+          {/* Unread badge example - conditional rendering in real implementation */}
+          <span className="topbar-badge" />
+        </button>
+
+        {/* User Profile Menu */}
+        <button
+          className="topbar-user-menu"
+          title="User menu"
+          aria-label="User menu"
+        >
+          {/* User Avatar */}
+          <div className="topbar-avatar">JD</div>
+
+          {/* User Info (hidden on mobile) */}
+          <div className="topbar-user-info">
+            <span className="topbar-user-name">John Doe</span>
+            <span className="topbar-user-role">Admin</span>
+          </div>
+
+          {/* Dropdown Chevron */}
+          <ChevronDown className="topbar-user-chevron" />
+        </button>
       </div>
     </header>
   );

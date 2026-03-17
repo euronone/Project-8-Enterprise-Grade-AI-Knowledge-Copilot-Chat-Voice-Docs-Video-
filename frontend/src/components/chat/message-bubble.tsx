@@ -7,22 +7,26 @@ export function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
 
   return (
-    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
-      <div
-        className={cn(
-          "max-w-[85%] rounded-xl px-4 py-3 text-sm",
-          isUser ? "bg-primary text-primary-foreground" : "bg-card border"
-        )}
-      >
-        <div className="prose-chat whitespace-pre-wrap">{message.content}</div>
+    <div className={cn("chat-message-wrapper", isUser ? "chat-message-user" : "chat-message-ai")}>
+      <div>
+        {/* Message content with prose styling */}
+        <div className="prose-chat">{message.content}</div>
+
+        {/* Citations section */}
         {message.citations?.length ? (
-          <div className="mt-3 grid gap-2">
+          <div className="chat-message-citations">
             {message.citations.map((citation) => (
               <CitationCard key={citation.id} citation={citation} />
             ))}
           </div>
         ) : null}
-        {!isUser ? <FeedbackButtons messageId={message.id} /> : null}
+
+        {/* Feedback buttons for AI messages only */}
+        {!isUser ? (
+          <div className="mt-3">
+            <FeedbackButtons messageId={message.id} />
+          </div>
+        ) : null}
       </div>
     </div>
   );

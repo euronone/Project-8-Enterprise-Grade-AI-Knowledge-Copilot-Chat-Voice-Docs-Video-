@@ -5,7 +5,38 @@ const config: Config = {
   darkMode: "class",
   theme: {
     extend: {
+      /* Enterprise AI Design System Colors */
       colors: {
+        /* Background Colors */
+        "bg-primary": "#0F172A",
+        "bg-secondary": "#1a202c",
+        
+        /* Surface Colors */
+        "surface-primary": "#111827",
+        "surface-secondary": "#1f2937",
+        "panel": "#1F2937",
+        
+        /* Border Colors */
+        "border-primary": "#374151",
+        "border-secondary": "#4b5563",
+        
+        /* Text Colors */
+        "text-primary": "#F9FAFB",
+        "text-secondary": "#9CA3AF",
+        "text-muted": "#6B7280",
+        
+        /* Accent Colors */
+        "accent-primary": "#6366F1",
+        "accent-secondary": "#22C55E",
+        "warning": "#F59E0B",
+        "danger": "#EF4444",
+        
+        /* Interactive States */
+        "hover-state": "#2d3748",
+        "active-state": "#4b5563",
+        "disabled-state": "#9CA3AF",
+        
+        /* Brand Color Palette */
         brand: {
           50: "#f0f9ff",
           100: "#e0f2fe",
@@ -19,6 +50,8 @@ const config: Config = {
           900: "#0c4a6e",
           950: "#082f49",
         },
+        
+        /* Legacy Tailwind Colors for Compatibility */
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -59,8 +92,22 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono", "monospace"],
+        sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif"],
+        mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", "monospace"],
+      },
+      fontSize: {
+        xs: ["12px", { lineHeight: "16px" }],
+        sm: ["14px", { lineHeight: "20px" }],
+        base: ["16px", { lineHeight: "24px" }],
+        lg: ["18px", { lineHeight: "28px" }],
+        xl: ["20px", { lineHeight: "28px" }],
+        "2xl": ["24px", { lineHeight: "32px" }],
+        "3xl": ["30px", { lineHeight: "36px" }],
+      },
+      spacing: {
+        "sidebar-width": "var(--sidebar-width)",
+        "sidebar-width-collapsed": "var(--sidebar-width-collapsed)",
+        "topbar-height": "var(--topbar-height)",
       },
       keyframes: {
         "accordion-down": {

@@ -12,10 +12,12 @@ export function MessageList({ messages }: { messages: Message[] }) {
   }, [messages]);
 
   return (
-    <div className="flex-1 space-y-3 overflow-auto pr-2 scrollbar-thin">
-      {messages.map((message) => (
-        <MessageBubble key={message.id} message={message} />
-      ))}
+    <div className="chat-messages p-4">
+      <div className="space-y-0">
+        {messages.map((message) => (
+          <MessageBubble key={message.id} message={message} />
+        ))}
+      </div>
       <div ref={endRef} />
     </div>
   );

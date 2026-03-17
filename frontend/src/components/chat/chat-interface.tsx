@@ -24,13 +24,28 @@ export function ChatInterface({ conversationId }: { conversationId: string }) {
   }, [messages]);
 
   return (
-    <div className="grid grid-rows-[1fr_auto_auto] gap-4 h-[calc(100vh-10rem)]">
-      <div className="rounded-xl border bg-background p-4">
+    <div className="grid grid-rows-[1fr_auto_auto] gap-3 h-[calc(100vh-10rem)]">
+      {/* Message list container with modern workspace styling */}
+      <div className="chat-container overflow-hidden">
         <MessageList messages={messages} />
       </div>
-      {streamingMessageId ? <TypingIndicator /> : null}
-      <FollowUpSuggestions suggestions={suggestions} onSelect={(s) => void sendMessage(s)} />
-      <ChatInput onSend={(text) => sendMessage(text)} disabled={Boolean(streamingMessageId)} />
+
+      {/* Typing indicator */}
+      {streamingMessageId ? (
+        <div className="px-4 py-2">
+          <TypingIndicator />
+        </div>
+      ) : null}
+
+      {/* Follow-up suggestions */}
+      <div className="px-4">
+        <FollowUpSuggestions suggestions={suggestions} onSelect={(s) => void sendMessage(s)} />
+      </div>
+
+      {/* Chat input */}
+      <div className="px-4 pb-4">
+        <ChatInput onSend={(text) => sendMessage(text)} disabled={Boolean(streamingMessageId)} />
+      </div>
     </div>
   );
 }

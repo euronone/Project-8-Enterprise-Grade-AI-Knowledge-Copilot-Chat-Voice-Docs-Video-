@@ -4,33 +4,87 @@
 
 @layer base {
   :root {
-    --background: 220 20% 97%;
-    --foreground: 224 71% 4%;
-    --card: 0 0% 100%;
-    --card-foreground: 224 71% 4%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 224 71% 4%;
+    /* Dark Theme (Default) - Enterprise AI Interface */
+    --color-bg-primary: #0F172A;
+    --color-bg-secondary: #1a202c;
+    --color-surface-primary: #111827;
+    --color-surface-secondary: #1f2937;
+    --color-panel: #1F2937;
+    --color-border-primary: #374151;
+    --color-border-secondary: #4b5563;
+    
+    /* Color System */
+    --color-primary: #6366F1;
+    --color-secondary: #22C55E;
+    --color-warning: #F59E0B;
+    --color-danger: #EF4444;
+    
+    /* Text Colors */
+    --color-text-primary: #E5E7EB;
+    --color-text-secondary: #9CA3AF;
+    --color-text-muted: #6B7280;
+    
+    /* Interactive States */
+    --color-hover: #2d3748;
+    --color-active: #4b5563;
+    --color-disabled: #9CA3AF;
+    
+    /* Legacy Tailwind Variables for Compatibility */
+    --background: 224 71% 4%;
+    --foreground: 210 40% 98%;
+    --card: 224 71% 7%;
+    --card-foreground: 210 40% 98%;
+    --popover: 224 71% 7%;
+    --popover-foreground: 210 40% 98%;
     --primary: 262 83% 58%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 224 71% 4%;
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 9% 46%;
+    --secondary: 215 28% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 215 28% 17%;
+    --muted-foreground: 218 11% 65%;
     --accent: 262 83% 95%;
     --accent-foreground: 262 83% 40%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
+    --border: 215 28% 17%;
+    --input: 215 28% 17%;
     --ring: 262 83% 58%;
+    
+    /* Layout Dimensions */
     --radius: 0.75rem;
     --sidebar-width: 260px;
+    --sidebar-width-collapsed: 80px;
     --topbar-height: 56px;
+    
+    /* Gradients */
     --gradient-start: 262 83% 58%;
     --gradient-end: 199 89% 48%;
   }
 
   .dark {
+    /* Dark theme is the default, so these match :root */
+    --color-bg-primary: #0F172A;
+    --color-bg-secondary: #1a202c;
+    --color-surface-primary: #111827;
+    --color-surface-secondary: #1f2937;
+    --color-panel: #1F2937;
+    --color-border-primary: #374151;
+    --color-border-secondary: #4b5563;
+    
+    --color-primary: #6366F1;
+    --color-secondary: #22C55E;
+    --color-warning: #F59E0B;
+    --color-danger: #EF4444;
+    
+    --color-text-primary: #F9FAFB;
+    --color-text-secondary: #9CA3AF;
+    --color-text-muted: #6B7280;
+    
+    --color-hover: #2d3748;
+    --color-active: #4b5563;
+    --color-disabled: #9CA3AF;
+    
+    /* Legacy variables */
     --background: 224 71% 4%;
     --foreground: 210 20% 98%;
     --card: 224 71% 7%;
@@ -54,6 +108,263 @@
     --gradient-end: 199 89% 48%;
   }
 
+}
+
+@layer components {
+  /* Background Utilities */
+  .bg-primary {
+    @apply bg-[#0F172A];
+  }
+
+  .bg-secondary {
+    @apply bg-[#1a202c];
+  }
+
+  .bg-surface {
+    @apply bg-[#111827];
+  }
+
+  .bg-panel {
+    @apply bg-[#1F2937];
+  }
+
+  /* Text Color Utilities */
+  .text-primary {
+    @apply text-[#F9FAFB];
+  }
+
+  .text-secondary {
+    @apply text-[#9CA3AF];
+  }
+
+  .text-muted {
+    @apply text-[#6B7280];
+  }
+
+  /* Border Utilities */
+  .border-primary {
+    @apply border-[#374151];
+  }
+
+  .border-secondary {
+    @apply border-[#4b5563];
+  }
+
+  /* Color Brand Utilities */
+  .text-accent-primary {
+    @apply text-[#6366F1];
+  }
+
+  .text-accent-secondary {
+    @apply text-[#22C55E];
+  }
+
+  .text-warning {
+    @apply text-[#F59E0B];
+  }
+
+  .text-danger {
+    @apply text-[#EF4444];
+  }
+
+  .bg-accent-primary {
+    @apply bg-[#6366F1];
+  }
+
+  .bg-accent-secondary {
+    @apply bg-[#22C55E];
+  }
+
+  .bg-warning {
+    @apply bg-[#F59E0B];
+  }
+
+  .bg-danger {
+    @apply bg-[#EF4444];
+  }
+
+  /* Interactive States */
+  .hover-bg {
+    @apply hover:bg-[#2d3748] transition-colors duration-200;
+  }
+
+  .active-bg {
+    @apply bg-[#4b5563];
+  }
+
+  .disabled-text {
+    @apply text-[#9CA3AF] cursor-not-allowed opacity-50;
+  }
+
+  /* Button Variants - Standard spacing: px-4 (16px), py-3 (12px), rounded-[12px] */
+  .btn-primary {
+    @apply px-4 py-3 rounded-[12px] bg-[#6366F1] text-white font-semibold hover:bg-[#4F46E5] hover:shadow-lg hover:-translate-y-0.5 active:bg-[#4338CA] active:shadow-sm active:translate-y-0 transition-all duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#6366F1] disabled:hover:shadow-sm disabled:hover:translate-y-0 disabled:hover:-translate-y-0 focus:outline-none focus:ring-2 focus:ring-[#6366F1] focus:ring-offset-2 focus:ring-offset-[#0F172A];
+  }
+
+  .btn-secondary {
+    @apply px-4 py-3 rounded-[12px] bg-[#22C55E] text-white font-semibold hover:bg-[#16A34A] hover:shadow-lg hover:-translate-y-0.5 active:bg-[#15803D] active:shadow-sm active:translate-y-0 transition-all duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#22C55E] disabled:hover:shadow-sm disabled:hover:translate-y-0 focus:outline-none focus:ring-2 focus:ring-[#22C55E] focus:ring-offset-2 focus:ring-offset-[#0F172A];
+  }
+
+  .btn-danger {
+    @apply px-4 py-3 rounded-[12px] bg-[#EF4444] text-white font-semibold hover:bg-[#DC2626] hover:shadow-lg hover:-translate-y-0.5 active:bg-[#B91C1C] active:shadow-sm active:translate-y-0 transition-all duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#EF4444] disabled:hover:shadow-sm disabled:hover:translate-y-0 focus:outline-none focus:ring-2 focus:ring-[#EF4444] focus:ring-offset-2 focus:ring-offset-[#0F172A];
+  }
+
+  .btn-outline {
+    @apply px-4 py-3 rounded-[12px] border border-[#4B5563] text-[#E5E7EB] font-medium bg-transparent hover:bg-[#1F2937] hover:border-[#6366F1] hover:shadow-md hover:-translate-y-0.5 active:bg-[#111827] active:shadow-sm active:translate-y-0 transition-all duration-150 ease-in-out disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:border-[#374151] focus:outline-none focus:ring-2 focus:ring-[#6366F1] focus:ring-offset-2 focus:ring-offset-[#0F172A];
+  }
+
+  .btn-ghost {
+    @apply px-4 py-3 rounded-[12px] text-[#E5E7EB] font-medium bg-transparent hover:bg-[#1F2937] hover:text-[#818CF8] hover:shadow-sm active:bg-[#252e3f] active:shadow-none transition-all duration-150 ease-in-out disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#6366F1] focus:ring-offset-2 focus:ring-offset-[#0F172A];
+  }
+
+  /* Card Component - Standard spacing: p-4 (16px) with consistent gaps, rounded-[12px] */
+  .card {
+    @apply bg-[#1F2937] border border-[#374151] rounded-[12px] p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:border-[#4B5563] transition-all duration-200 ease-in-out;
+  }
+
+  .card-hover {
+    @apply cursor-pointer hover:bg-[#252e3f] transition-colors duration-150 ease-in-out;
+  }
+
+  .card-elevated {
+    @apply bg-[#1F2937] border border-[#374151] rounded-[12px] p-4 shadow-md hover:shadow-lg hover:-translate-y-1 hover:border-[#4B5563] transition-all duration-200 ease-in-out;
+  }
+
+  .card-interactive {
+    @apply bg-[#1F2937] border border-[#374151] rounded-[12px] p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:border-[#6366F1] focus-within:ring-2 focus-within:ring-[#6366F1] focus-within:ring-offset-2 focus-within:ring-offset-[#0F172A] transition-all duration-200 ease-in-out;
+  }
+
+  .card-featured {
+    @apply bg-gradient-to-br from-[#1F2937] to-[#111827] border border-[#6366F1]/40 rounded-[12px] p-4 shadow-md hover:shadow-lg hover:-translate-y-0.5 hover:border-[#6366F1]/80 transition-all duration-200 ease-in-out;
+  }
+
+  /* Input Styles - Standard spacing: px-4 (16px), py-3 (12px), rounded-[12px] */
+  .input-field {
+    @apply w-full px-4 py-3 rounded-[12px] bg-[#1F2937] border border-[#374151] text-[#F9FAFB] placeholder-[#6B7280] hover:border-[#4B5563] focus:outline-none focus:border-[#6366F1] focus:ring-2 focus:ring-[#6366F1] focus:ring-offset-2 focus:ring-offset-[#0F172A] transition-all duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-[#111827];
+  }
+
+  /* Badge Component - Standard spacing: px-3 (12px), py-2 (8px), rounded-[20px] */
+  .badge {
+    @apply inline-flex items-center px-3 py-2 rounded-[20px] text-xs font-semibold transition-all duration-150 ease-in-out;
+  }
+
+  .badge-primary {
+    @apply badge bg-[#6366F1] bg-opacity-15 text-[#818CF8] hover:bg-opacity-25 hover:text-[#A5B4FC] border border-[#6366F1] border-opacity-20 hover:border-opacity-40;
+  }
+
+  .badge-success {
+    @apply badge bg-[#22C55E] bg-opacity-15 text-[#4ADE80] hover:bg-opacity-25 hover:text-[#86EFAC] border border-[#22C55E] border-opacity-20 hover:border-opacity-40;
+  }
+
+  .badge-warning {
+    @apply badge bg-[#F59E0B] bg-opacity-15 text-[#FBBF24] hover:bg-opacity-25 hover:text-[#FCD34D] border border-[#F59E0B] border-opacity-20 hover:border-opacity-40;
+  }
+
+  .badge-danger {
+    @apply badge bg-[#EF4444] bg-opacity-15 text-[#F87171] hover:bg-opacity-25 hover:text-[#FCA5A5] border border-[#EF4444] border-opacity-20 hover:border-opacity-40;
+  }
+
+  /* Separator/Divider */
+  .divider {
+    @apply h-px bg-[#374151];
+  }
+
+  /* Focus Ring */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-[#6366F1] focus:ring-offset-2 focus:ring-offset-[#0F172A] transition-all duration-150 ease-in-out;
+  }
+
+  /* Typography Standardization - Inter for content, JetBrains Mono for code */
+  
+  /* Heading 1 - 28px / 36px line-height / 700 weight - improved hierarchy */
+  .heading-1 {
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    @apply text-[28px] leading-[36px] font-bold text-[#F3F4F6] mb-6 tracking-tight;
+  }
+
+  /* Heading 2 - 22px / 30px line-height / 600 weight */
+  .heading-2 {
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    @apply text-[22px] leading-[30px] font-semibold text-[#F3F4F6] mb-4;
+  }
+
+  /* Heading 3 - 18px / 26px line-height / 600 weight */
+  .heading-3 {
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    @apply text-[18px] leading-[26px] font-semibold text-[#F3F4F6] mb-3;
+  }
+
+  /* Body Regular - 14px / 20px line-height / 400 weight - improved contrast */
+  .body-regular {
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    @apply text-[14px] leading-[20px] font-normal text-[#E5E7EB] mb-4;
+  }
+
+  /* Body Medium - 14px / 20px line-height / 500 weight */
+  .body-medium {
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    @apply text-[14px] leading-[20px] font-medium text-[#F3F4F6] mb-4;
+  }
+
+  /* Body Small - 12px / 18px line-height / 400 weight */
+  .body-small {
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    @apply text-[12px] leading-[18px] font-normal text-[#9CA3AF] mb-2;
+  }
+
+  /* Caption - 12px / 16px line-height / 400 weight (muted text) */
+  .caption {
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    @apply text-[12px] leading-[16px] font-normal text-[#6B7280];
+  }
+
+  /* Label - 12px / 16px line-height / 500 weight (input labels, badges) */
+  .label {
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    @apply text-[12px] leading-[16px] font-medium text-[#9CA3AF];
+  }
+
+  /* Code Block - 14px / 20px line-height - JetBrains Mono, rounded-[12px] for consistency */
+  .code-block {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    @apply bg-[#0F172A] border border-[#374151] rounded-[12px] p-4 text-[14px] leading-[20px] text-[#E5E7EB] overflow-x-auto font-medium;
+  }
+
+  /* Inline Code / Code Snippet - 12px / 18px - JetBrains Mono, rounded-[8px] */
+  .code-inline {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    @apply text-[12px] leading-[18px] font-medium bg-[#1F2937] text-[#E5E7EB] px-2 py-1 rounded-[8px] border border-[#374151] border-opacity-50;
+  }
+
+  /* Spacing Utilities - Consistent gaps between elements */
+  .space-heading-content {
+    @apply mb-4;
+  }
+
+  .space-content-section {
+    @apply mb-6;
+  }
+
+  .space-section-section {
+    @apply mb-8;
+  }
+
+  .space-tight {
+    @apply mb-2;
+  }
+
+  .space-comfortable {
+    @apply mb-4;
+  }
+
+  .space-generous {
+    @apply mb-6;
+  }
+
+  /* Skeleton Loading */
+  .skeleton {
+    @apply bg-gradient-to-r from-[#1F2937] via-[#2d3748] to-[#1F2937] rounded animate-pulse;
+  }
   .high-contrast {
     --background: 0 0% 0%;
     --foreground: 0 0% 100%;
@@ -118,61 +429,169 @@
   }
 }
 
-/* Markdown content styles */
+/* Modern Chat Interface Styles */
+
+/* Chat container with clean background */
+.chat-container {
+  @apply flex flex-col h-full bg-[#0F172A] rounded-[14px] border border-[#374151] shadow-sm;
+}
+
+.chat-messages {
+  @apply flex-1 overflow-y-auto pr-2;
+}
+
+/* User message styles - Modern indigo bubble - 14px / 20px */
+.chat-message-user {
+  @apply flex justify-end;
+}
+
+.chat-message-user > div {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply max-w-[75%] lg:max-w-[65%] bg-[#4F46E5] text-white rounded-[16px] px-4 py-3 text-[14px] leading-[20px] font-normal shadow-md hover:shadow-lg transition-shadow duration-200;
+}
+
+/* AI message styles - Minimalist with left border accent - 14px / 20px */
+.chat-message-ai {
+  @apply flex justify-start;
+}
+
+.chat-message-ai > div {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply max-w-[85%] lg:max-w-[75%] bg-transparent border-l-2 border-[#6366F1] px-4 py-3 text-[14px] leading-[20px] font-normal;
+}
+
+/* Message spacing - Comfortable vertical gaps */
+.chat-message-wrapper {
+  @apply mb-4 last:mb-0;
+}
+
+/* Citations within messages */
+.chat-message-citations {
+  @apply mt-3 space-y-2;
+}
+
+/* Markdown content styles - Enhanced rendering */
 .prose-chat {
-  @apply text-sm leading-relaxed;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply text-[14px] leading-[20px] text-[#E5E7EB];
 }
 
 .prose-chat h1,
 .prose-chat h2,
-.prose-chat h3 {
-  @apply font-semibold mt-4 mb-2;
+.prose-chat h3,
+.prose-chat h4 {
+  @apply font-semibold text-inherit;
 }
 
-.prose-chat h1 { @apply text-lg; }
-.prose-chat h2 { @apply text-base; }
-.prose-chat h3 { @apply text-sm; }
+/* H1 in Markdown: 20px / 28px - matches heading-2 */
+.prose-chat h1 { 
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply text-[20px] leading-[28px] mt-4 mb-3;
+}
 
-.prose-chat p { @apply mb-3; }
+/* H2 in Markdown: 18px / 26px - matches heading-3 */
+.prose-chat h2 { 
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply text-[18px] leading-[26px] mt-4 mb-3;
+}
+
+/* H3 in Markdown: 16px / 24px */
+.prose-chat h3 { 
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply text-[16px] leading-[24px] mt-3 mb-2;
+}
+
+/* H4 in Markdown: 14px / 20px - matches body */
+.prose-chat h4 { 
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply text-[14px] leading-[20px] mt-3 mb-2;
+}
+
+.prose-chat p {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply text-[14px] leading-[20px] text-[#E5E7EB] mb-4 last:mb-0;
+}
 
 .prose-chat ul,
 .prose-chat ol {
-  @apply pl-5 mb-3 space-y-1;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply pl-6 my-4 space-y-2;
 }
 
 .prose-chat ul { @apply list-disc; }
 .prose-chat ol { @apply list-decimal; }
 
-.prose-chat code {
-  @apply font-mono text-xs bg-muted px-1.5 py-0.5 rounded;
+.prose-chat li { 
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply my-2 text-[14px] leading-[20px] text-[#E5E7EB];
 }
 
+/* Inline code styling - JetBrains Mono - 12px / 18px */
+.prose-chat code:not(pre code) {
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  @apply text-[12px] leading-[18px] font-medium bg-[#1F2937] text-[#E5E7EB] px-2 py-1 rounded break-words;
+}
+
+/* Code block styling - JetBrains Mono - 14px / 20px */
 .prose-chat pre {
-  @apply my-3 rounded-lg overflow-hidden;
+  @apply my-4 rounded-[10px] overflow-hidden shadow-md bg-[#1F2937] border border-[#374151];
 }
 
+.prose-chat pre code {
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  @apply text-[14px] leading-[20px] font-medium text-[#F9FAFB] block p-4;
+}
+
+/* Blockquote styling - 14px / 20px */
 .prose-chat blockquote {
-  @apply border-l-4 border-primary pl-4 italic text-muted-foreground my-3;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply border-l-2 border-[#6366F1] pl-4 py-2 italic text-[#9CA3AF] my-4 text-[14px] leading-[20px];
 }
 
+/* Table styling - Clean professional look - 13px / 19px for compact display */
 .prose-chat table {
-  @apply w-full border-collapse text-xs my-3;
-}
-
-.prose-chat th,
-.prose-chat td {
-  @apply border border-border px-3 py-1.5;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply w-full border-collapse text-[13px] leading-[19px] my-4 border border-[#374151] rounded-[8px] overflow-hidden;
 }
 
 .prose-chat th {
-  @apply bg-muted font-semibold;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply bg-[#1F2937] text-[#E5E7EB] font-semibold px-3 py-2.5 text-left border-b border-[#374151] text-[13px] leading-[19px];
 }
 
+.prose-chat td {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply px-3 py-2.5 border-b border-[#374151] text-[#E5E7EB] text-[13px] leading-[19px];
+}
+
+.prose-chat tbody tr:hover {
+  @apply bg-[#1F2937]/50 transition-colors;
+}
+
+/* Link styling in messages - 14px / 20px with Inter */
 .prose-chat a {
-  @apply text-primary underline underline-offset-2 hover:opacity-80;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply text-[14px] leading-[20px] text-[#6366F1] hover:text-[#818CF8] underline underline-offset-2 transition-colors font-medium;
+}
+
+/* Emphasis and strong tags - with Inter */
+.prose-chat em {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply italic text-inherit;
+}
+
+.prose-chat strong {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  @apply font-semibold text-inherit;
+}
+
+/* Horizontal rule - 4px spacing */
+.prose-chat hr {
+  @apply my-4 border-t border-[#374151];
 }
 
 /* Animations */
+
 @keyframes pulse-soft {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
@@ -218,5 +637,421 @@
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
+}
+
+/* Professional UI Animations - 150-200ms duration with cubic-bezier easing */
+
+@keyframes button-press {
+  0% { transform: scale(1); }
+  50% { transform: scale(0.98); }
+  100% { transform: scale(1); }
+}
+
+@keyframes scale-in {
+  from { 
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to { 
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes scale-out {
+  from { 
+    opacity: 1;
+    transform: scale(1);
+  }
+  to { 
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+@keyframes slide-down {
+  from { 
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-up {
+  from { 
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes icon-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(180deg); }
+}
+
+@keyframes subtle-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+@keyframes modal-backdrop-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-content-zoom {
+  from { 
+    opacity: 0;
+    transform: scale(0.95) translateY(-20px);
+  }
+  to { 
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Dropdown item cascade animation */
+@keyframes dropdown-item-fade {
+  from { 
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Animation Utility Classes */
+
+/* Buttons - Scale feedback on hover/active */
+.animate-button-press {
+  animation: button-press 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Scale transitions for modals and cards */
+.animate-scale-in {
+  animation: scale-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-scale-out {
+  animation: scale-out 150ms cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+/* Dropdown animations */
+.animate-slide-down {
+  animation: slide-down 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-slide-up {
+  animation: slide-up 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Icon rotation for expandables */
+.animate-icon-rotate {
+  animation: icon-rotate 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Subtle hover effect */
+.animate-subtle-bounce {
+  animation: subtle-bounce 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Modal animations */
+.animate-modal-backdrop {
+  animation: modal-backdrop-fade 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-modal-content {
+  animation: modal-content-zoom 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Dropdown item with stagger support */
+.animate-dropdown-item {
+  animation: dropdown-item-fade 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-dropdown-item-0 { animation-delay: 0ms; }
+.animate-dropdown-item-1 { animation-delay: 30ms; }
+.animate-dropdown-item-2 { animation-delay: 60ms; }
+.animate-dropdown-item-3 { animation-delay: 90ms; }
+.animate-dropdown-item-4 { animation-delay: 120ms; }
+.animate-dropdown-item-5 { animation-delay: 150ms; }
+
+/* Transition Classes - Professional smooth transitions (150-200ms) */
+
+/* Button transitions */
+.transition-button {
+  @apply transition-all duration-150 ease-in-out;
+}
+
+/* Card transitions with enhanced smoothness */
+.transition-card {
+  @apply transition-all duration-200 ease-in-out;
+}
+
+/* Sidebar item transitions for smooth hover/active states */
+.transition-sidebar-item {
+  @apply transition-all duration-150 ease-in-out;
+}
+
+/* Icon transitions for smooth rotations */
+.transition-icon {
+  @apply transition-transform duration-200 ease-in-out;
+}
+
+/* Focus ring transitions */
+.transition-focus {
+  @apply transition-all duration-150 ease-in-out;
+}
+
+/* Shadow transitions for depth effects */
+.transition-shadow {
+  transition: box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Color transitions */
+.transition-color {
+  @apply transition-colors duration-150 ease-in-out;
+}
+
+/* Border transitions */
+.transition-border {
+  @apply transition-[border-color] duration-150 ease-in-out;
+}
+
+/* Combined interaction transitions */
+.transition-interactive {
+  @apply transition-all duration-150 ease-in-out;
+}
+
+/* Modern Enterprise Sidebar */
+
+/* Sidebar container - Dark enterprise background */
+.sidebar {
+  @apply hidden md:flex md:flex-col w-[260px] bg-[#111827] border-r border-[#374151] transition-all duration-200;
+}
+
+.sidebar.collapsed {
+  @apply w-[72px];
+}
+
+/* Sidebar header - Logo and brand */
+.sidebar-header {
+  @apply h-14 border-b border-[#374151] px-4 flex items-center gap-3 transition-all duration-200;
+}
+
+.sidebar-logo {
+  @apply h-8 w-8 rounded bg-[#6366F1] flex-shrink-0;
+}
+
+.sidebar-title {
+  @apply font-semibold text-[#F9FAFB] text-sm transition-opacity duration-200;
+}
+
+.sidebar.collapsed .sidebar-title {
+  @apply hidden;
+}
+
+/* Sidebar navigation container */
+.sidebar-nav {
+  @apply flex-1 p-3 space-y-1 overflow-y-auto scrollbar-thin;
+}
+
+/* Navigation item base styles */
+.sidebar-nav-item {
+  @apply flex items-center gap-3 w-full rounded-[8px] px-4 py-3 text-sm font-medium transition-all duration-150 ease-in-out text-[#9CA3AF] no-underline;
+}
+
+/* Hover state - Light gray background */
+.sidebar-nav-item:hover {
+  @apply bg-[#1F2937] text-[#E5E7EB];
+}
+
+/* Active state - Indigo background with white text */
+.sidebar-nav-item.active {
+  @apply bg-[#6366F1] text-white shadow-md;
+}
+
+.sidebar-nav-item.active:hover {
+  @apply bg-[#4F46E5] shadow-lg;
+}
+
+/* Icon styling - Consistent size and alignment */
+.sidebar-nav-icon {
+  @apply h-5 w-5 flex-shrink-0 transition-transform duration-150 ease-in-out;
+}
+
+.sidebar-nav-item:hover .sidebar-nav-icon {
+  @apply scale-110;
+}
+
+/* Label styling - Hide in collapsed state */
+.sidebar-nav-label {
+  @apply text-sm font-medium flex-1 transition-opacity duration-150 ease-in-out;
+}
+
+.sidebar.collapsed .sidebar-nav-label {
+  @apply hidden;
+}
+
+/* Modern Enterprise Topbar */
+
+/* Topbar container - Professional dark background */
+.topbar {
+  @apply h-16 border-b border-[#374151] bg-[#111827] shadow-sm transition-all duration-200;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem; /* px-4 = 16px */
+}
+
+/* Left section - Controls and search */
+.topbar-left {
+  @apply flex items-center gap-3;
+}
+
+/* Sidebar toggle button */
+.topbar-toggle {
+  @apply p-2.5 rounded-lg transition-all duration-150 ease-in-out text-[#9CA3AF] hover:text-[#E5E7EB] hover:bg-[#1F2937] hover:scale-[1.05] active:scale-[0.95] focus:outline-none focus:ring-2 focus:ring-[#6366F1] focus:ring-offset-2 focus:ring-offset-[#111827];
+}
+
+.topbar-toggle:active {
+  @apply bg-[#2d3748];
+}
+
+/* Search bar container */
+.topbar-search-wrapper {
+  @apply hidden md:flex items-center gap-2 h-10 rounded-[10px] border border-[#374151] bg-[#1F2937]/50 px-3 transition-all duration-150 ease-in-out;
+}
+
+.topbar-search-wrapper:hover {
+  @apply border-[#4B5563] bg-[#1F2937]/70;
+}
+
+.topbar-search-wrapper:focus-within {
+  @apply border-[#6366F1] bg-[#1F2937] ring-2 ring-[#6366F1]/20;
+}
+
+/* Search input styling */
+.topbar-search-input {
+  @apply flex-1 bg-transparent text-[#E5E7EB] text-sm placeholder-[#6B7280] outline-none transition-colors duration-150 ease-in-out;
+}
+
+.topbar-search-input::placeholder {
+  color: #6B7280;
+}
+
+/* Search icon */
+.topbar-search-icon {
+  @apply h-4 w-4 text-[#9CA3AF] flex-shrink-0 transition-colors duration-150 ease-in-out;
+}
+
+/* Right section - User controls and notifications */
+.topbar-right {
+  @apply flex items-center gap-3;
+}
+
+/* Topbar action button base (icon buttons) */
+.topbar-action-btn {
+  @apply p-2.5 rounded-lg transition-all duration-150 ease-in-out text-[#9CA3AF] hover:text-[#E5E7EB] hover:bg-[#1F2937] hover:scale-[1.05] active:scale-[0.95] focus:outline-none focus:ring-2 focus:ring-[#6366F1] focus:ring-offset-2 focus:ring-offset-[#111827];
+}
+
+.topbar-action-btn:active {
+  @apply bg-[#2d3748];
+}
+
+.topbar-action-btn.has-unread {
+  @apply text-[#E5E7EB];
+}
+
+/* Icon styling in topbar */
+.topbar-icon {
+  @apply h-5 w-5 flex-shrink-0;
+}
+
+/* Separator between sections (optional) */
+.topbar-separator {
+  @apply h-6 w-px bg-[#374151];
+}
+
+/* Organization switcher container */
+.topbar-org-switcher {
+  @apply flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all duration-200 text-[#E5E7EB] hover:bg-[#1F2937] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#6366F1] focus:ring-offset-2 focus:ring-offset-[#111827];
+}
+
+.topbar-org-switcher:hover {
+  @apply bg-[#1F2937];
+}
+
+.topbar-org-icon {
+  @apply h-5 w-5 flex-shrink-0 text-[#6366F1];
+}
+
+.topbar-org-label {
+  @apply text-sm font-medium hidden sm:block;
+}
+
+.topbar-org-chevron {
+  @apply h-4 w-4 text-[#6B7280] group-hover:text-[#9CA3AF] transition-colors;
+}
+
+/* User profile menu trigger */
+.topbar-user-menu {
+  @apply flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all duration-200 text-[#E5E7EB] hover:bg-[#1F2937] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#6366F1] focus:ring-offset-2 focus:ring-offset-[#111827];
+}
+
+.topbar-user-menu:hover {
+  @apply bg-[#1F2937];
+}
+
+/* User avatar styling */
+.topbar-avatar {
+  @apply h-8 w-8 rounded-full bg-[#6366F1] flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 border border-[#6366F1];
+}
+
+.topbar-user-info {
+  @apply hidden sm:flex flex-col;
+}
+
+.topbar-user-name {
+  @apply text-sm font-medium text-[#E5E7EB] leading-none;
+}
+
+.topbar-user-role {
+  @apply text-xs text-[#9CA3AF] leading-none mt-0.5;
+}
+
+.topbar-user-chevron {
+  @apply h-4 w-4 text-[#6B7280] flex-shrink-0;
+}
+
+/* Notification badge */
+.topbar-badge {
+  @apply absolute top-1 right-1 h-2 w-2 rounded-full bg-[#EF4444];
+}
+
+/* Responsive helpers */
+@media (max-width: 639px) {
+  .topbar-org-label,
+  .topbar-user-info {
+    @apply hidden;
+  }
+
+  .topbar {
+    @apply px-2;
+  }
+
+  .topbar-left,
+  .topbar-right {
+    @apply gap-2;
+  }
 }
 

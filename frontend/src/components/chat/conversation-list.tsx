@@ -2,6 +2,7 @@
 
 import type { Conversation } from "@/types/chat";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 export function ConversationList({
   conversations,
@@ -15,17 +16,15 @@ export function ConversationList({
   return (
     <div className="space-y-1">
       {conversations.map((conversation) => (
-        <button
+        <Button
           key={conversation.id}
-          className={cn(
-            "w-full rounded-md border p-3 text-left text-sm",
-            activeId === conversation.id ? "border-primary bg-primary/5" : "hover:bg-muted"
-          )}
+          variant={activeId === conversation.id ? "secondary" : "outline"}
+          className="w-full justify-start h-auto flex-col items-start p-3 rounded-[10px]"
           onClick={() => onSelect(conversation.id)}
         >
           <p className="font-medium line-clamp-1">{conversation.title}</p>
-          <p className="mt-1 text-xs text-muted-foreground line-clamp-1">{conversation.messageCount} messages</p>
-        </button>
+          <p className="mt-1 text-xs text-[#9CA3AF] line-clamp-1">{conversation.messageCount} messages</p>
+        </Button>
       ))}
     </div>
   );

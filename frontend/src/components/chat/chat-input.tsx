@@ -15,12 +15,12 @@ export function ChatInput({ onSend, disabled }: { onSend: (text: string) => Prom
   };
 
   return (
-    <div className="rounded-xl border bg-card p-3">
+    <div className="rounded-[14px] border border-[#374151] bg-[#1F2937] p-3 shadow-sm hover:shadow-md transition-all duration-200">
       <Textarea
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder="Ask about your company knowledge, docs, meetings, or code..."
-        className="min-h-[90px] border-0 p-0 focus-visible:ring-0"
+        className="min-h-[90px] border-0 p-0 focus-visible:ring-0 bg-[#1F2937] text-[#F9FAFB] placeholder-[#6B7280]"
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();

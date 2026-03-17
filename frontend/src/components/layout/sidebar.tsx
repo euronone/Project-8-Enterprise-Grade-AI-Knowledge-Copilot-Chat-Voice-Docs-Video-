@@ -38,17 +38,15 @@ export function Sidebar() {
   const collapsed = !sidebarOpen;
 
   return (
-    <aside
-      className={cn(
-        "hidden md:flex md:flex-col border-r bg-card transition-all duration-200",
-        collapsed ? "w-[72px]" : "w-[260px]"
-      )}
-    >
-      <div className="h-14 border-b px-4 flex items-center">
-        <div className="h-8 w-8 rounded bg-primary" />
-        {!collapsed && <span className="ml-3 font-semibold">KnowledgeForge</span>}
+    <aside className={cn("sidebar", collapsed && "collapsed")}>
+      {/* Sidebar Header */}
+      <div className="sidebar-header">
+        <div className="sidebar-logo" />
+        <span className="sidebar-title">KnowledgeForge</span>
       </div>
-      <nav className="p-2 space-y-1">
+
+      {/* Navigation Items */}
+      <nav className="sidebar-nav">
         {navItems.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
@@ -56,13 +54,14 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href as never}
+              title={item.label}
               className={cn(
-                "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
-                active ? "bg-primary text-primary-foreground" : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                "sidebar-nav-item",
+                active && "active"
               )}
             >
-              <Icon className="h-4 w-4 shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
+              <Icon className="sidebar-nav-icon" />
+              <span className="sidebar-nav-label">{item.label}</span>
             </Link>
           );
         })}
