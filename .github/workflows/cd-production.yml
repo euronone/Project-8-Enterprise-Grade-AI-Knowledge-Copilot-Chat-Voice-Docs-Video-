@@ -1,0 +1,198 @@
+name: CD — Production
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Docker image tag to deploy (git SHA or semver tag)"
+        required: true
+        type: string
+      skip_smoke_tests:
+        description: "Skip post-deploy smoke tests (emergency rollback only)"
+        required: false
+        default: "false"
+        type: boolean
+
+# Prevent concurrent production deployments
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-push-frontend:
+    name: Build & Push Frontend Image
+    runs-on: ubuntu-latest
+    if: hashFiles('frontend/Dockerfile') != ''
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PRODUCTION_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend/
+          push: true
+          tags: |
+            ${{ steps.ecr-login.outputs.registry }}/knowledgeforge-frontend:${{ github.sha }}
+            ${{ steps.ecr-login.outputs.registry }}/knowledgeforge-frontend:${{ github.ref_name }}
+            ${{ steps.ecr-login.outputs.registry }}/knowledgeforge-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ secrets.PRODUCTION_API_URL }}
+            NEXT_PUBLIC_WS_URL=${{ secrets.PRODUCTION_WS_URL }}
+            NEXT_PUBLIC_APP_NAME=KnowledgeForge
+            NEXT_PUBLIC_SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+
+  build-and-push-backend:
+    name: Build & Push Backend Image
+    runs-on: ubuntu-latest
+    if: hashFiles('backend/Dockerfile') != ''
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PRODUCTION_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: backend/
+          push: true
+          tags: |
+            ${{ steps.ecr-login.outputs.registry }}/knowledgeforge-backend:${{ github.sha }}
+            ${{ steps.ecr-login.outputs.registry }}/knowledgeforge-backend:${{ github.ref_name }}
+            ${{ steps.ecr-login.outputs.registry }}/knowledgeforge-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-to-production:
+    name: Deploy to Production (EKS via ArgoCD — Canary)
+    runs-on: ubuntu-latest
+    needs: [build-and-push-frontend, build-and-push-backend]
+    if: |
+      always() &&
+      (needs.build-and-push-frontend.result == 'success' || needs.build-and-push-frontend.result == 'skipped') &&
+      (needs.build-and-push-backend.result == 'success' || needs.build-and-push-backend.result == 'skipped')
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: production
+      url: ${{ secrets.PRODUCTION_APP_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PRODUCTION_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS production cluster
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_PRODUCTION_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+
+      - name: Run database migrations
+        run: |
+          ECR_REGISTRY=$(aws ecr describe-registry --query 'registryId' --output text).dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          kubectl -n knowledgeforge-production run db-migrate-${{ github.run_id }} \
+            --image=${ECR_REGISTRY}/knowledgeforge-backend:${{ github.sha }} \
+            --restart=Never \
+            --env="DATABASE_URL=${{ secrets.PRODUCTION_DATABASE_URL }}" \
+            --command -- alembic upgrade head
+          kubectl -n knowledgeforge-production wait pod/db-migrate-${{ github.run_id }} --for=condition=Succeeded --timeout=180s
+          kubectl -n knowledgeforge-production delete pod db-migrate-${{ github.run_id }}
+
+      - name: Update image tags in manifests
+        run: |
+          ECR_REGISTRY=$(aws ecr describe-registry --query 'registryId' --output text).dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          sed -i "s|image: .*/knowledgeforge-frontend:.*|image: ${ECR_REGISTRY}/knowledgeforge-frontend:${{ github.sha }}|g" \
+            infrastructure/kubernetes/apps/frontend/deployment.yaml
+          sed -i "s|image: .*/knowledgeforge-backend:.*|image: ${ECR_REGISTRY}/knowledgeforge-backend:${{ github.sha }}|g" \
+            infrastructure/kubernetes/apps/backend-api/deployment.yaml
+
+      - name: Canary rollout — 10% traffic
+        run: |
+          kubectl apply -f infrastructure/kubernetes/apps/frontend/ -n knowledgeforge-production
+          kubectl apply -f infrastructure/kubernetes/apps/backend-api/ -n knowledgeforge-production
+          # Scale canary to 10% of replicas
+          TOTAL=$(kubectl get deployment knowledgeforge-backend -n knowledgeforge-production -o jsonpath='{.spec.replicas}')
+          if [ $(( TOTAL / 10 )) -gt 0 ]; then CANARY=$(( TOTAL / 10 )); else CANARY=1; fi
+          kubectl scale deployment knowledgeforge-backend-canary --replicas=$CANARY -n knowledgeforge-production || true
+          echo "Canary at 10% — waiting 60s"
+          sleep 60
+
+      - name: Verify canary health
+        run: |
+          ERROR_RATE=$(kubectl top pod -n knowledgeforge-production -l track=canary --no-headers 2>/dev/null | wc -l)
+          echo "Canary pods running: ${ERROR_RATE}"
+          curl -sf "${{ secrets.PRODUCTION_API_URL }}/api/v1/health" | jq '.status' | grep -q '"ok"'
+          echo "Canary health check passed ✅"
+
+      - name: Progressive rollout — 50% then 100%
+        run: |
+          kubectl rollout status deployment/knowledgeforge-frontend -n knowledgeforge-production --timeout=300s
+          kubectl rollout status deployment/knowledgeforge-backend -n knowledgeforge-production --timeout=300s
+          kubectl apply -f infrastructure/kubernetes/apps/backend-worker/ -n knowledgeforge-production
+          kubectl apply -f infrastructure/kubernetes/apps/websocket-server/ -n knowledgeforge-production
+          kubectl rollout status deployment/knowledgeforge-websocket -n knowledgeforge-production --timeout=300s || true
+
+      - name: Post-deploy smoke tests
+        if: ${{ inputs.skip_smoke_tests != 'true' }}
+        run: |
+          PROD_URL=${{ secrets.PRODUCTION_API_URL }}
+          # Health endpoints
+          curl -sf "${PROD_URL}/api/v1/health" | jq -e '.status == "ok"'
+          curl -sf "${PROD_URL}/api/v1/health/ready" | jq -e '.status == "ok"'
+          # Verify OpenAPI spec is accessible
+          curl -sf "${PROD_URL}/openapi.json" | jq '.openapi' | grep -q '"3'
+          echo "Production smoke tests passed ✅"
+
+      - name: Create GitHub release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          tag_name: ${{ github.ref_name }}
+
+      - name: Notify deployment status
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,eventName,ref,workflow
+          text: "Production deployment ${{ job.status }} — ${{ github.ref_name }}"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true

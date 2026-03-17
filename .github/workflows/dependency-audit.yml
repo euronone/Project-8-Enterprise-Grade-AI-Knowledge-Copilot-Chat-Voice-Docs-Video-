@@ -1,0 +1,149 @@
+name: Dependency Audit
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "backend/pyproject.toml"
+      - "backend/requirements*.txt"
+      - ".github/workflows/dependency-audit.yml"
+  pull_request:
+    paths:
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "backend/pyproject.toml"
+      - "backend/requirements*.txt"
+  schedule:
+    # Run every Monday at 08:00 UTC
+    - cron: "0 8 * * 1"
+
+jobs:
+  npm-audit:
+    name: npm Dependency Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate --json > /tmp/npm-audit.json || true
+
+      - name: Parse and report npm audit results
+        run: |
+          CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' /tmp/npm-audit.json)
+          HIGH=$(jq '.metadata.vulnerabilities.high // 0' /tmp/npm-audit.json)
+          MODERATE=$(jq '.metadata.vulnerabilities.moderate // 0' /tmp/npm-audit.json)
+          echo "npm audit results:"
+          echo "  Critical: ${CRITICAL}"
+          echo "  High:     ${HIGH}"
+          echo "  Moderate: ${MODERATE}"
+          # Fail on critical or high vulnerabilities
+          if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+            echo "❌ Critical or high severity vulnerabilities found!"
+            npm audit --audit-level=high
+            exit 1
+          fi
+          echo "✅ No critical or high severity vulnerabilities found"
+
+      - name: Upload npm audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: npm-audit-report
+          path: /tmp/npm-audit.json
+          retention-days: 30
+
+  pip-audit:
+    name: Python Dependency Audit (pip-audit)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Install project dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run pip-audit
+        run: |
+          pip-audit --format json --output /tmp/pip-audit.json || true
+          pip-audit --format markdown > /tmp/pip-audit.md || true
+          # Strict mode for CI: fail on any vulnerability
+          pip-audit --strict
+
+      - name: Upload pip-audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pip-audit-report
+          path: |
+            /tmp/pip-audit.json
+            /tmp/pip-audit.md
+          retention-days: 30
+
+  outdated-check:
+    name: Outdated Dependency Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check outdated npm packages
+        working-directory: frontend
+        run: |
+          npm install
+          echo "## Outdated npm packages" > /tmp/outdated.md
+          npm outdated --json | jq -r 'to_entries[] | "| \(.key) | \(.value.current) | \(.value.latest) |"' >> /tmp/outdated.md || true
+
+      - name: Check outdated Python packages
+        working-directory: backend
+        run: |
+          pip install -e ".[dev]" pip-check
+          echo "## Outdated Python packages" >> /tmp/outdated.md
+          pip list --outdated --format columns >> /tmp/outdated.md || true
+
+      - name: Upload outdated packages report
+        uses: actions/upload-artifact@v4
+        with:
+          name: outdated-dependencies-report
+          path: /tmp/outdated.md
+          retention-days: 7

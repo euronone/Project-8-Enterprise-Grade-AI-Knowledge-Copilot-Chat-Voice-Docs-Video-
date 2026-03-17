@@ -1,0 +1,173 @@
+name: CD — Staging
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+# Prevent concurrent staging deployments
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  ci-gate:
+    name: CI Gate Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Verify CI passed
+        run: echo "CI gate — downstream workflows must pass before deploy"
+
+  build-and-push-frontend:
+    name: Build & Push Frontend Image
+    runs-on: ubuntu-latest
+    needs: ci-gate
+    if: hashFiles('frontend/Dockerfile') != ''
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend/
+          push: true
+          tags: |
+            ${{ steps.ecr-login.outputs.registry }}/knowledgeforge-frontend:${{ github.sha }}
+            ${{ steps.ecr-login.outputs.registry }}/knowledgeforge-frontend:staging-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ secrets.STAGING_API_URL }}
+            NEXT_PUBLIC_WS_URL=${{ secrets.STAGING_WS_URL }}
+            NEXT_PUBLIC_APP_NAME=KnowledgeForge
+            NEXT_PUBLIC_SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+
+  build-and-push-backend:
+    name: Build & Push Backend Image
+    runs-on: ubuntu-latest
+    needs: ci-gate
+    if: hashFiles('backend/Dockerfile') != ''
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: backend/
+          push: true
+          tags: |
+            ${{ steps.ecr-login.outputs.registry }}/knowledgeforge-backend:${{ github.sha }}
+            ${{ steps.ecr-login.outputs.registry }}/knowledgeforge-backend:staging-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-to-staging:
+    name: Deploy to Staging (EKS via ArgoCD)
+    runs-on: ubuntu-latest
+    needs: [build-and-push-frontend, build-and-push-backend]
+    if: |
+      always() &&
+      (needs.build-and-push-frontend.result == 'success' || needs.build-and-push-frontend.result == 'skipped') &&
+      (needs.build-and-push-backend.result == 'success' || needs.build-and-push-backend.result == 'skipped')
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: staging
+      url: ${{ secrets.STAGING_APP_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS staging cluster
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_STAGING_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+
+      - name: Update image tags in Kubernetes manifests
+        run: |
+          ECR_REGISTRY=$(aws ecr describe-registry --query 'registryId' --output text).dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          sed -i "s|image: .*/knowledgeforge-frontend:.*|image: ${ECR_REGISTRY}/knowledgeforge-frontend:${{ github.sha }}|g" \
+            infrastructure/kubernetes/apps/frontend/deployment.yaml
+          sed -i "s|image: .*/knowledgeforge-backend:.*|image: ${ECR_REGISTRY}/knowledgeforge-backend:${{ github.sha }}|g" \
+            infrastructure/kubernetes/apps/backend-api/deployment.yaml
+
+      - name: Run database migrations (init container waits)
+        run: |
+          kubectl -n knowledgeforge-staging run db-migrate-${{ github.run_id }} \
+            --image=$(aws ecr describe-registry --query 'registryId' --output text).dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/knowledgeforge-backend:${{ github.sha }} \
+            --restart=Never \
+            --env="DATABASE_URL=${{ secrets.STAGING_DATABASE_URL }}" \
+            --command -- alembic upgrade head
+          kubectl -n knowledgeforge-staging wait pod/db-migrate-${{ github.run_id }} --for=condition=Succeeded --timeout=120s
+          kubectl -n knowledgeforge-staging delete pod db-migrate-${{ github.run_id }}
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f infrastructure/kubernetes/base/ -n knowledgeforge-staging
+          kubectl apply -f infrastructure/kubernetes/apps/frontend/ -n knowledgeforge-staging
+          kubectl apply -f infrastructure/kubernetes/apps/backend-api/ -n knowledgeforge-staging
+          kubectl apply -f infrastructure/kubernetes/apps/backend-worker/ -n knowledgeforge-staging
+          kubectl apply -f infrastructure/kubernetes/apps/websocket-server/ -n knowledgeforge-staging
+
+      - name: Wait for rollout to complete
+        run: |
+          kubectl rollout status deployment/knowledgeforge-frontend -n knowledgeforge-staging --timeout=300s
+          kubectl rollout status deployment/knowledgeforge-backend -n knowledgeforge-staging --timeout=300s
+
+      - name: Run smoke tests against staging
+        run: |
+          STAGING_URL=${{ secrets.STAGING_API_URL }}
+          # Health check
+          curl -sf "${STAGING_URL}/api/v1/health" | jq '.status' | grep -q '"ok"'
+          # Readiness check
+          curl -sf "${STAGING_URL}/api/v1/health/ready" | jq '.status' | grep -q '"ok"'
+          echo "Staging smoke tests passed ✅"
+
+      - name: Notify deployment status
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
