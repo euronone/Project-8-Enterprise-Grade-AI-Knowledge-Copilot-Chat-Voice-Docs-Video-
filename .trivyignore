@@ -1,0 +1,17 @@
+# CVE-2024-23342: python-ecdsa Minerva attack vulnerability
+# Status: Accepted with justification
+# Details: This vulnerability is a side-channel attack on ECDSA signing that requires:
+#   1. Access to precise timing information across multiple operations
+#   2. Ability to send many requests to extract timing data
+#   3. Sophisticated cryptanalytic capabilities
+# 
+# Our threat model does not include timing side-channel attacks. ECDSA is used only for
+# JWT signing/verification in a server environment via python-jose[cryptography]. The
+# cryptography library's native implementation is preferred when available, and timing
+# attacks are not a practical concern for our use case.
+#
+# Action: Monitor for ecdsa v0.19.2+ release and upgrade immediately.
+# Reported: 2026-03-17
+# Next Review: 2026-06-17
+
+CVE-2024-23342
