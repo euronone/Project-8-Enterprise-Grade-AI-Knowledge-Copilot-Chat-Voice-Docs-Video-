@@ -1,7 +1,14 @@
-﻿export default function KnowledgeBasePage() {
+import { PageHeader } from "@/components/shared/page-header";
+import { UploadZone } from "@/components/knowledge/upload-zone";
+
+export default function KnowledgeBasePage() {
   return (
-    <div>
-      <h1>KnowledgeBase</h1>
+    <div className="space-y-6">
+      <PageHeader
+        title="Knowledge Base"
+        description="Ingest documents, connectors, and crawled web sources into a unified semantic index."
+      />
+      <UploadZone />
     </div>
   );
 }

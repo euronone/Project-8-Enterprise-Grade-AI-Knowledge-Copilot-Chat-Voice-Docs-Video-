@@ -1,2 +1,54 @@
-﻿/* skeleton styles */
+﻿@keyframes kf-fade-up {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes kf-fade-left {
+	from {
+		opacity: 0;
+		transform: translateX(8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+@keyframes kf-breathe {
+	0%,
+	100% {
+		transform: scale(1);
+		opacity: 0.75;
+	}
+	50% {
+		transform: scale(1.03);
+		opacity: 1;
+	}
+}
+
+.kf-animate-fade-up {
+	animation: kf-fade-up 240ms ease-out both;
+}
+
+.kf-animate-fade-left {
+	animation: kf-fade-left 240ms ease-out both;
+}
+
+.kf-animate-breathe {
+	animation: kf-breathe 1600ms ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.kf-animate-fade-up,
+	.kf-animate-fade-left,
+	.kf-animate-breathe {
+		animation: none;
+	}
+}
 
