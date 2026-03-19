@@ -1,0 +1,239 @@
+'use client';
+
+import { useCallback, useRef, useState } from 'react';
+
+import {
+  ArrowUp,
+  Paperclip,
+  Square,
+  X,
+} from 'lucide-react';
+import { useDropzone } from 'react-dropzone';
+
+import { Button } from '@/components/ui/Button';
+import { cn } from '@/lib/utils';
+import { useChatStore } from '@/stores/chatStore';
+
+interface MessageInputProps {
+  onSend: (content: string, attachments?: File[]) => void;
+  disabled?: boolean;
+  placeholder?: string;
+  onAbort?: () => void;
+}
+
+const SLASH_COMMANDS = [
+  { command: '/summarize', description: 'Summarize the selected content' },
+  { command: '/translate', description: 'Translate to another language' },
+  { command: '/compare', description: 'Compare two documents or concepts' },
+  { command: '/explain', description: 'Explain a concept in simple terms' },
+  { command: '/draft', description: 'Draft a document or email' },
+];
+
+export function MessageInput({ onSend, disabled, placeholder, onAbort }: MessageInputProps) {
+  const { streaming } = useChatStore();
+  const [value, setValue] = useState('');
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [showSlashCommands, setShowSlashCommands] = useState(false);
+  const [slashFilter, setSlashFilter] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isStreaming = streaming.isStreaming;
+  const canSend = (value.trim().length > 0 || attachments.length > 0) && !disabled;
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setValue(val);
+
+    // Auto-resize
+    const ta = textareaRef.current;
+    if (ta) {
+      ta.style.height = 'auto';
+      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    }
+
+    // Slash commands
+    const lastWord = val.split(/\s/).pop() ?? '';
+    if (lastWord.startsWith('/') && lastWord.length > 0) {
+      setSlashFilter(lastWord.slice(1));
+      setShowSlashCommands(true);
+    } else {
+      setShowSlashCommands(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+    if (e.key === 'Escape') {
+      setShowSlashCommands(false);
+    }
+  };
+
+  const handleSend = useCallback(() => {
+    if (!canSend || isStreaming) return;
+    onSend(value.trim(), attachments.length > 0 ? attachments : undefined);
+    setValue('');
+    setAttachments([]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setShowSlashCommands(false);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }, [canSend, isStreaming, onSend, value, attachments]);
+
+  const applySlashCommand = (cmd: string) => {
+    const parts = value.split(/\s/);
+    parts[parts.length - 1] = `${cmd} `;
+    setValue(parts.join(' '));
+    setShowSlashCommands(false);
+    textareaRef.current?.focus();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const newFiles = Array.from(files);
+      setAttachments((prev) => [...prev, ...newFiles].slice(0, 5));
+    }
+    // Reset so same file can be selected again
+    e.target.value = '';
+  };
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    noClick: true,
+    noKeyboard: true,
+    onDrop: (files) => {
+      setAttachments((prev) => [...prev, ...files].slice(0, 5));
+    },
+  });
+
+  const filteredCommands = SLASH_COMMANDS.filter(
+    (c) => !slashFilter || c.command.slice(1).startsWith(slashFilter)
+  );
+
+  return (
+    <div className="border-t border-surface-100 bg-white p-4 dark:border-surface-800 dark:bg-surface-950">
+      {/* Attachments preview */}
+      {attachments.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {attachments.map((file, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-1.5 rounded-md border border-surface-200 bg-surface-50 px-2 py-1 text-xs dark:border-surface-700 dark:bg-surface-800"
+            >
+              <span className="max-w-[120px] truncate text-surface-700 dark:text-surface-300">
+                {file.name}
+              </span>
+              <button
+                className="text-surface-400 hover:text-surface-600"
+                type="button"
+                onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Input row — file button is OUTSIDE dropzone to avoid event conflicts */}
+      <div className="flex items-end gap-2">
+        {/* File attachment button — standalone, not inside dropzone */}
+        <div className="shrink-0">
+          <input
+            ref={fileInputRef}
+            accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg"
+            className="sr-only"
+            id="chat-file-input"
+            multiple
+            type="file"
+            onChange={handleFileChange}
+          />
+          <label
+            htmlFor="chat-file-input"
+            className="flex cursor-pointer items-center justify-center rounded-md p-1.5 text-surface-400 hover:bg-surface-100 hover:text-surface-600 dark:hover:bg-surface-800 dark:hover:text-surface-300"
+            title="Attach file"
+          >
+            <Paperclip className="h-5 w-5" />
+          </label>
+        </div>
+
+        {/* Dropzone + textarea + send button */}
+        <div
+          {...getRootProps()}
+          className={cn(
+            'relative flex flex-1 items-end gap-2 rounded-xl border border-surface-200 bg-surface-50 px-4 py-3',
+            'dark:border-surface-700 dark:bg-surface-900',
+            'transition-colors',
+            isDragActive && 'border-brand-400 bg-brand-50 dark:border-brand-600 dark:bg-brand-950'
+          )}
+        >
+          <input {...getInputProps()} />
+
+          {/* Slash commands dropdown */}
+          {showSlashCommands && filteredCommands.length > 0 && (
+            <div className="absolute bottom-full left-4 mb-2 w-72 rounded-lg border border-surface-200 bg-white shadow-lg dark:border-surface-700 dark:bg-surface-900">
+              {filteredCommands.map((cmd) => (
+                <button
+                  key={cmd.command}
+                  className="flex w-full items-start gap-3 px-3 py-2 text-left hover:bg-surface-50 dark:hover:bg-surface-800"
+                  type="button"
+                  onClick={() => applySlashCommand(cmd.command)}
+                >
+                  <code className="mt-0.5 text-sm font-medium text-brand-600 dark:text-brand-400">
+                    {cmd.command}
+                  </code>
+                  <span className="text-xs text-surface-500">{cmd.description}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Textarea */}
+          <textarea
+            ref={textareaRef}
+            className="flex-1 resize-none bg-transparent text-sm text-surface-900 placeholder-surface-400 focus:outline-none dark:text-surface-100"
+            disabled={disabled}
+            placeholder={
+              placeholder ??
+              (isDragActive ? 'Drop files here...' : 'Ask anything... (Shift+Enter for new line)')
+            }
+            rows={1}
+            value={value}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+          />
+
+          {/* Send / Stop */}
+          {isStreaming ? (
+            <Button
+              aria-label="Stop generation"
+              size="icon-sm"
+              variant="danger"
+              onClick={onAbort}
+            >
+              <Square className="h-4 w-4 fill-current" />
+            </Button>
+          ) : (
+            <Button
+              aria-label="Send message"
+              disabled={!canSend}
+              size="icon-sm"
+              variant={canSend ? 'primary' : 'secondary'}
+              onClick={handleSend}
+            >
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <p className="mt-2 text-center text-[10px] text-surface-300 dark:text-surface-600">
+        KnowledgeForge AI may make mistakes. Check important info.
+      </p>
+    </div>
+  );
+}
