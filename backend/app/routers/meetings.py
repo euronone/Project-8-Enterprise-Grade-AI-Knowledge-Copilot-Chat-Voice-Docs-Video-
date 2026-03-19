@@ -122,6 +122,35 @@ async def get_meeting(
     return MeetingOut.from_orm(meeting)
 
 
+@router.patch("/{meeting_id}", response_model=MeetingOut)
+async def update_meeting(
+    meeting_id: uuid.UUID,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update meeting status (e.g. mark as ended) and store transcript."""
+    from datetime import datetime, timezone
+    meeting = await _get_user_meeting(meeting_id, current_user.id, db)
+    if "status" in body:
+        meeting.status = body["status"]
+        if body["status"] == "ended":
+            meeting.ended_at = datetime.now(timezone.utc)
+    if "transcript" in body and body["transcript"]:
+        # Generate AI recap from transcript
+        try:
+            from app.services.ai_service import get_simple_response
+            transcript_text = body["transcript"]
+            recap_text = await get_simple_response(
+                f"Generate a concise meeting recap with: summary, 3 key decisions, and action items (with assignee). Meeting transcript:\n\n{transcript_text}"
+            )
+            meeting.recap = {"summary": recap_text}
+        except Exception:
+            meeting.recap = {"summary": body.get("transcript", "")[:500]}
+    await db.flush()
+    return MeetingOut.from_orm(meeting)
+
+
 @router.get("/{meeting_id}/recap", response_model=MeetingRecap)
 async def get_meeting_recap(
     meeting_id: uuid.UUID,

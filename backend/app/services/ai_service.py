@@ -189,6 +189,29 @@ async def _openai_stream(
             yield text
 
 
+async def get_simple_response(prompt: str) -> str:
+    """Non-streaming single AI call — used for recap generation etc."""
+    if settings.has_anthropic_key:
+        import anthropic
+        client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        msg = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return msg.content[0].text
+    elif settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip():
+        from openai import OpenAI
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        res = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1024,
+        )
+        return res.choices[0].message.content or ""
+    return "Meeting recap generation requires an AI API key."
+
+
 async def stream_chat_response(
     conversation_id: uuid.UUID,
     messages: List[Message],
