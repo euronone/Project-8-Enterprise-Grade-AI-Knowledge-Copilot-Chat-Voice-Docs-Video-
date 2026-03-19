@@ -29,37 +29,45 @@ async def search(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    page = body.page or 1
+    page_size = body.pageSize or 20
     result = await search_service.search_documents(
         query=body.query,
         db=db,
         user=current_user,
-        page=body.page or 1,
-        page_size=body.pageSize or 20,
+        page=page,
+        page_size=page_size,
         filters=body.filters,
         types=body.types,
     )
 
-    items = []
+    results = []
     for item in result["items"]:
-        items.append(
-            {
-                "id": item["id"],
-                "documentId": item["documentId"],
-                "documentName": item["documentName"],
-                "documentType": item["documentType"],
-                "content": item["content"],
-                "score": item["score"],
-                "highlights": item["highlights"],
-                "url": item.get("url"),
-                "createdAt": item["createdAt"],
-            }
-        )
+        created = item["createdAt"]
+        created_str = created.isoformat() if hasattr(created, "isoformat") else str(created)
+        results.append({
+            "id": str(item["id"]),
+            "type": "document",
+            "title": item["documentName"],
+            "excerpt": item["content"][:200],
+            "url": item.get("url"),
+            "documentType": item["documentType"],
+            "connectorType": None,
+            "collectionName": None,
+            "relevanceScore": item["score"],
+            "highlights": item["highlights"],
+            "metadata": {},
+            "createdAt": created_str,
+            "updatedAt": created_str,
+        })
 
     return SearchResponse(
-        items=items,
-        total=result["total"],
         query=result["query"],
-        took_ms=result["took_ms"],
+        results=results,
+        totalCount=result["total"],
+        page=page,
+        pageSize=page_size,
+        processingTimeMs=result["took_ms"],
     )
 
 

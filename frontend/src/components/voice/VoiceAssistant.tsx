@@ -67,19 +67,32 @@ export function VoiceAssistant() {
             isFinal: true,
           });
 
-          // Convert answer to speech
-          const speechBlob = await voiceApi.generateSpeech({
-            text: answer,
-            persona: selectedVoice,
-          });
-          const url = URL.createObjectURL(speechBlob);
-          const audio = new Audio(url);
+          // Convert answer to speech — try API, fall back to browser TTS
           setStatus('speaking');
-          audio.onended = () => {
-            setStatus('connected');
-            URL.revokeObjectURL(url);
-          };
-          await audio.play();
+          try {
+            const speechBlob = await voiceApi.generateSpeech({
+              text: answer,
+              persona: selectedVoice,
+            });
+            const url = URL.createObjectURL(speechBlob);
+            const audio = new Audio(url);
+            audio.onended = () => {
+              setStatus('connected');
+              URL.revokeObjectURL(url);
+            };
+            await audio.play();
+          } catch {
+            // Fall back to browser Web Speech API (works without any API key)
+            if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+              const utter = new SpeechSynthesisUtterance(answer);
+              utter.rate = 1;
+              utter.pitch = 1;
+              utter.onend = () => setStatus('connected');
+              window.speechSynthesis.speak(utter);
+            } else {
+              setStatus('connected');
+            }
+          }
         } else {
           setStatus('connected');
         }

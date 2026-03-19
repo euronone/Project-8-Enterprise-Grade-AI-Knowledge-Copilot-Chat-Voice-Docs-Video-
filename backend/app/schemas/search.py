@@ -5,23 +5,44 @@ from uuid import UUID
 from pydantic import BaseModel
 
 
-class SearchResultItem(BaseModel):
-    id: UUID
-    documentId: UUID
-    documentName: str
-    documentType: str
-    content: str
-    score: float
-    highlights: List[str] = []
+class FacetValue(BaseModel):
+    value: str
+    label: str
+    count: int
+    selected: bool = False
+
+
+class SearchFacet(BaseModel):
+    field: str
+    label: str
+    values: List[FacetValue] = []
+
+
+class SearchResult(BaseModel):
+    id: str
+    type: str = "document"
+    title: str
+    excerpt: str
     url: Optional[str] = None
-    createdAt: datetime
+    documentType: Optional[str] = None
+    connectorType: Optional[str] = None
+    collectionName: Optional[str] = None
+    relevanceScore: float
+    highlights: List[str] = []
+    metadata: Dict[str, Any] = {}
+    createdAt: str
+    updatedAt: str
 
 
 class SearchResponse(BaseModel):
-    items: List[SearchResultItem]
-    total: int
     query: str
-    took_ms: int
+    results: List[SearchResult]
+    totalCount: int
+    page: int = 1
+    pageSize: int = 20
+    facets: List[SearchFacet] = []
+    suggestions: List[str] = []
+    processingTimeMs: int
 
 
 class SearchRequest(BaseModel):

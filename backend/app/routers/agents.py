@@ -91,8 +91,10 @@ async def _run_research(
 
     # Step 3 — stream AI response
     full_report = ""
-    try:
-        if settings.has_anthropic_key:
+    ai_succeeded = False
+
+    if settings.has_anthropic_key:
+        try:
             import anthropic
             client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
             async with client.messages.stream(
@@ -104,8 +106,12 @@ async def _run_research(
                 async for text in stream.text_stream:
                     full_report += text
                     yield _sse("delta", {"text": text})
+            ai_succeeded = True
+        except Exception as e:
+            logger.warning(f"Anthropic research failed: {e}")
 
-        elif settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip():
+    if not ai_succeeded and settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip():
+        try:
             from openai import AsyncOpenAI
             client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
             stream = await client.chat.completions.create(
@@ -122,26 +128,43 @@ async def _run_research(
                 if text:
                     full_report += text
                     yield _sse("delta", {"text": text})
+            ai_succeeded = True
+        except Exception as e:
+            logger.warning(f"OpenAI research failed: {e}")
 
-        else:
-            # Mock report for demo
+    if not ai_succeeded:
+        # Build a mock report from whatever chunks we found
+        if sources:
+            source_lines = "\n".join(
+                f"- **{s['documentName']}**: {s['chunkText'][:150]}..." for s in sources[:3]
+            )
             mock = (
                 f"# Research Report: {query}\n\n"
                 "## Executive Summary\n"
-                "No AI key is configured. This is a demo report.\n\n"
+                f"Based on your knowledge base, here is relevant information about **{query}**.\n\n"
                 "## Key Findings\n"
-                "- Configure OPENAI_API_KEY or ANTHROPIC_API_KEY to enable real research.\n\n"
-                "## Conclusion\n"
-                "Add an API key to your backend .env file to activate the Research Agent."
+                f"{source_lines}\n\n"
+                "## Note\n"
+                "To generate a full AI-powered research report, please ensure a valid "
+                "OPENAI_API_KEY or ANTHROPIC_API_KEY is configured in the backend environment.\n\n"
+                "## Sources\n"
+                + "\n".join(f"- {s['documentName']}" for s in sources)
             )
-            for word in mock.split(" "):
-                full_report += word + " "
-                yield _sse("delta", {"text": word + " "})
-
-    except Exception as e:
-        logger.error(f"Research agent error: {e}")
-        yield _sse("error", {"message": str(e)})
-        return
+        else:
+            mock = (
+                f"# Research Report: {query}\n\n"
+                "## Executive Summary\n"
+                f"No documents matching **{query}** were found in your knowledge base.\n\n"
+                "## Recommendations\n"
+                "- Upload relevant documents to your knowledge base\n"
+                "- Configure a valid AI API key (OPENAI_API_KEY or ANTHROPIC_API_KEY)\n\n"
+                "## Conclusion\n"
+                "Once documents are uploaded and indexed, the Research Agent will provide "
+                "comprehensive, cited analysis."
+            )
+        for word in mock.split(" "):
+            full_report += word + " "
+            yield _sse("delta", {"text": word + " "})
 
     yield _sse("done", {"report": full_report, "sourceCount": len(sources)})
 

@@ -34,29 +34,27 @@ class WorkflowRunOut(BaseModel):
     id: UUID
     workflow_id: UUID
     status: str
-    trigger_data: Dict[str, Any]
-    step_results: List[Any]
-    error: Optional[str]
+    trigger_data: Dict[str, Any] = {}
+    step_results: List[Any] = []
+    error: Optional[str] = None
     started_at: datetime
-    completed_at: Optional[datetime]
+    completed_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class WorkflowOut(BaseModel):
     id: UUID
     name: str
-    description: Optional[str]
+    description: Optional[str] = None
     trigger_type: str
-    trigger_config: Dict[str, Any]
-    steps: List[Any]
+    trigger_config: Dict[str, Any] = {}
+    steps: List[Any] = []
     status: str
-    run_count: int
-    last_run_at: Optional[datetime]
+    run_count: int = 0
+    last_run_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     recent_runs: List[WorkflowRunOut] = []
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}

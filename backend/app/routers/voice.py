@@ -109,7 +109,6 @@ async def synthesize_speech(
     if settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip():
         try:
             from openai import AsyncOpenAI
-            import io
 
             client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
@@ -131,14 +130,11 @@ async def synthesize_speech(
             )
         except Exception as e:
             logger.warning(f"TTS synthesis failed: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Speech synthesis failed: {str(e)}",
-            )
 
+    # Fallback: return a special header telling the client to use browser TTS
     raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="Speech synthesis requires OPENAI_API_KEY to be configured.",
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail={"use_browser_tts": True, "text": body.text},
     )
 
 
@@ -178,32 +174,46 @@ async def voice_ask(
     messages = [{"role": "user", "content": body.question}]
 
     # 2. Call AI
+    answer = ""
     if settings.has_anthropic_key:
-        import anthropic
-        client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        response = await client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=300,
-            system=system_prompt,
-            messages=messages,
-        )
-        answer = response.content[0].text
+        try:
+            import anthropic
+            client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+            response = await client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=300,
+                system=system_prompt,
+                messages=messages,
+            )
+            answer = response.content[0].text
+        except Exception as e:
+            logger.warning(f"Anthropic voice ask failed: {e}")
 
-    elif settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip():
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            max_tokens=300,
-            messages=[{"role": "system", "content": system_prompt}] + messages,
-        )
-        answer = response.choices[0].message.content or ""
+    if not answer and settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip():
+        try:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                max_tokens=300,
+                messages=[{"role": "system", "content": system_prompt}] + messages,
+            )
+            answer = response.choices[0].message.content or ""
+        except Exception as e:
+            logger.warning(f"OpenAI voice ask failed: {e}")
 
-    else:
-        answer = (
-            "I don't have an AI key configured to answer questions. "
-            "Please add an OpenAI or Anthropic API key to enable voice Q&A."
-        )
+    if not answer:
+        # Fallback: answer from context chunks if available, else generic
+        if sources:
+            answer = (
+                f"Based on your knowledge base, here is what I found: "
+                f"{sources[0]['chunkText'][:200]}."
+            )
+        else:
+            answer = (
+                "I'm KnowledgeForge Voice Assistant. I can answer questions about your documents. "
+                "Please upload documents to your knowledge base and ask me anything about them."
+            )
 
     return AskResponse(answer=answer)
 
