@@ -111,3 +111,44 @@ function createApiClient(): AxiosInstance {
 
 export const apiClient = createApiClient();
 export default apiClient;
+
+/**
+ * Returns a valid access token, refreshing it automatically if it has
+ * expired or is about to expire. Use this in raw fetch() / SSE calls that
+ * bypass the axios interceptors.
+ */
+export async function getToken(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+
+  const token = localStorage.getItem('accessToken');
+  if (!token) return null;
+
+  // Decode JWT exp without verification
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]!));
+    const expiresInMs = payload.exp * 1000 - Date.now();
+    if (expiresInMs > 60_000) return token; // still valid for >60 s
+  } catch {
+    // malformed token — fall through to refresh
+  }
+
+  // Token expired or unreadable — try to refresh
+  const refreshToken = localStorage.getItem('refreshToken');
+  if (!refreshToken) return null;
+
+  try {
+    const res = await fetch(`${BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { accessToken: string; refreshToken: string };
+    localStorage.setItem('accessToken', data.accessToken);
+    if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
+    apiClient.defaults.headers.common['Authorization'] = `Bearer ${data.accessToken}`;
+    return data.accessToken;
+  } catch {
+    return null;
+  }
+}

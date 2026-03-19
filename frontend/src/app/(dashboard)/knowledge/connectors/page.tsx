@@ -1,11 +1,14 @@
 'use client';
 
+import { useState } from 'react';
+
 import { useQuery } from '@tanstack/react-query';
 import { Plus, RefreshCw } from 'lucide-react';
 
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { ConnectorCard } from '@/components/knowledge/ConnectorCard';
+import { FigmaConnectModal } from '@/components/knowledge/FigmaConnectModal';
 import * as knowledgeApi from '@/lib/api/knowledge';
 import { useKnowledgeStore } from '@/stores/knowledgeStore';
 
@@ -36,6 +39,7 @@ const AVAILABLE_CONNECTORS = [
 
 export default function ConnectorsPage() {
   const { connectors, setConnectors } = useKnowledgeStore();
+  const [openModal, setOpenModal] = useState<string | null>(null);
 
   const { isLoading } = useQuery({
     queryKey: ['connectors'],
@@ -108,6 +112,7 @@ export default function ConnectorsPage() {
               (connector) => (
                 <button
                   key={connector.type}
+                  onClick={() => setOpenModal(connector.type)}
                   className="flex items-center gap-3 rounded-xl border border-surface-200 bg-white p-3 text-left transition-all hover:border-brand-300 hover:shadow-card-hover dark:border-surface-700 dark:bg-surface-900 dark:hover:border-brand-700"
                 >
                   <span className="text-2xl">{connector.logo}</span>
@@ -122,6 +127,29 @@ export default function ConnectorsPage() {
               )
             )}
           </div>
+
+          {/* Connector modals */}
+          {openModal === 'figma' && (
+            <FigmaConnectModal onClose={() => setOpenModal(null)} />
+          )}
+          {openModal && openModal !== 'figma' && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl dark:bg-surface-900">
+                <p className="text-2xl mb-2">🚧</p>
+                <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100 mb-1">Coming Soon</h3>
+                <p className="text-sm text-surface-500 mb-4">
+                  The <strong>{AVAILABLE_CONNECTORS.find(c => c.type === openModal)?.name}</strong> connector is not yet implemented.
+                  Figma is the currently active connector.
+                </p>
+                <button
+                  onClick={() => setOpenModal(null)}
+                  className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

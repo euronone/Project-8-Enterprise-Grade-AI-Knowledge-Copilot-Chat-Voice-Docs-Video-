@@ -1,4 +1,4 @@
-import apiClient from './client';
+import apiClient, { getToken } from './client';
 
 import type {
   Conversation,
@@ -65,7 +65,7 @@ export async function sendMessage(
   onDone: (messageId: string) => void,
   onError: (error: string) => void
 ): Promise<void> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+  const token = typeof window !== 'undefined' ? await getToken() : null;
 
   const response = await fetch(
     `${BASE_URL}/conversations/${payload.conversationId}/messages/stream`,

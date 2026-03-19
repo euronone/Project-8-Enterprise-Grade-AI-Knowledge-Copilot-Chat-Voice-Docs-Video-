@@ -102,8 +102,9 @@ export async function addConnector(payload: {
   return data;
 }
 
-export async function syncConnector(connectorId: string): Promise<void> {
-  await apiClient.post(`/knowledge/connectors/${connectorId}/sync`);
+export async function syncConnector(connectorId: string): Promise<unknown> {
+  const { data } = await apiClient.post(`/knowledge/connectors/${connectorId}/sync`);
+  return data;
 }
 
 export async function deleteConnector(connectorId: string): Promise<void> {

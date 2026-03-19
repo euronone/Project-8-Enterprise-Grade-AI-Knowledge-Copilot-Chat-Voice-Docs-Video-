@@ -1,7 +1,7 @@
 import logging
 import math
 import uuid
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import func, select
@@ -244,18 +244,140 @@ async def sync_connector(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    from datetime import datetime, timezone
     connector = await _get_user_connector(connector_id, current_user.id, db)
     connector.status = ConnectorStatus.syncing
-
-    from datetime import datetime, timezone
     connector.last_sync_at = datetime.now(timezone.utc)
     await db.flush()
 
-    # In a real system, kick off a background job
-    connector.status = ConnectorStatus.connected
+    try:
+        if connector.type == "figma":
+            chunks_created = await _sync_figma(connector, current_user.id, db)
+            connector.status = ConnectorStatus.connected
+            await db.flush()
+            return {"message": f"Figma sync complete: {chunks_created} chunks indexed", "connectorId": str(connector_id)}
+
+        # Generic / unimplemented connector types — mark connected without real sync
+        connector.status = ConnectorStatus.connected
+        await db.flush()
+        return {"message": "Sync initiated", "connectorId": str(connector_id)}
+    except Exception as exc:
+        logger.exception("Connector sync failed: %s", exc)
+        connector.status = ConnectorStatus.error
+        await db.flush()
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+async def _sync_figma(connector: "Connector", user_id: uuid.UUID, db: AsyncSession) -> int:
+    """
+    Fetch a Figma file via the REST API and store its content as DocumentChunks
+    so it becomes searchable via RAG.
+    Returns the number of chunks created.
+    """
+    import httpx
+
+    cfg: Dict[str, Any] = connector.config or {}
+    token: str = cfg.get("accessToken", "")
+    file_url: str = cfg.get("fileUrl", "")
+
+    if not token:
+        raise ValueError("Figma access token missing in connector config")
+    if not file_url:
+        raise ValueError("Figma file URL missing in connector config")
+
+    # Extract file key from URL  e.g. https://www.figma.com/file/ABCD1234/...
+    # or https://www.figma.com/design/ABCD1234/...
+    import re
+    m = re.search(r"figma\.com/(?:file|design|make|board)/([A-Za-z0-9]+)", file_url)
+    if not m:
+        raise ValueError(f"Cannot extract file key from URL: {file_url}")
+    file_key = m.group(1)
+
+    headers = {"X-Figma-Token": token}
+    async with httpx.AsyncClient(timeout=30) as client:
+        # Verify token & fetch file
+        resp = await client.get(f"https://api.figma.com/v1/files/{file_key}", headers=headers)
+        if resp.status_code == 403:
+            raise ValueError("Invalid Figma token or no access to this file")
+        if resp.status_code != 200:
+            raise ValueError(f"Figma API error {resp.status_code}: {resp.text[:200]}")
+        file_data = resp.json()
+
+    file_name: str = file_data.get("name", "Figma File")
+
+    # Extract text content from the node tree
+    chunks_text: List[str] = []
+    _extract_figma_text(file_data.get("document", {}), chunks_text, path="")
+
+    if not chunks_text:
+        chunks_text = [f"Figma file '{file_name}' (file key: {file_key}) — no text nodes found."]
+
+    # Delete previous documents from this connector (re-sync)
+    existing = await db.execute(
+        select(Document).where(
+            Document.user_id == user_id,
+            Document.name == f"[Figma] {file_name}",
+        )
+    )
+    for old_doc in existing.scalars().all():
+        await db.delete(old_doc)
     await db.flush()
 
-    return {"message": "Sync initiated", "connectorId": str(connector_id)}
+    # Create a Document record to group the chunks
+    doc = Document(
+        user_id=user_id,
+        name=f"[Figma] {file_name}",
+        original_name=f"{file_name}.figma",
+        file_path=f"figma://{file_key}",
+        file_type="figma",
+        file_size=len("\n".join(chunks_text)),
+        status="ready",
+        word_count=sum(len(t.split()) for t in chunks_text),
+    )
+    db.add(doc)
+    await db.flush()
+
+    # Store as chunks
+    for idx, text in enumerate(chunks_text):
+        chunk = DocumentChunk(
+            document_id=doc.id,
+            content=text,
+            chunk_index=idx,
+            token_count=len(text.split()),
+        )
+        db.add(chunk)
+
+    await db.flush()
+    return len(chunks_text)
+
+
+def _extract_figma_text(node: Dict[str, Any], out: List[str], path: str, depth: int = 0) -> None:
+    """Recursively walk a Figma document tree and collect meaningful text."""
+    if depth > 12:
+        return
+
+    node_type = node.get("type", "")
+    name = node.get("name", "")
+    chars = node.get("characters", "")  # actual text in TEXT nodes
+
+    # Build a human-readable chunk for meaningful nodes
+    if node_type == "TEXT" and chars.strip():
+        label = f"{path} > {name}".strip(" >")
+        out.append(f"[Text] {label}: {chars.strip()}")
+    elif node_type in ("COMPONENT", "COMPONENT_SET") and name:
+        desc = node.get("description", "")
+        label = f"{path} > {name}".strip(" >")
+        chunk = f"[Component] {label}"
+        if desc:
+            chunk += f": {desc}"
+        out.append(chunk)
+    elif node_type in ("FRAME", "GROUP", "SECTION") and name:
+        label = f"{path} > {name}".strip(" >")
+        out.append(f"[{node_type.capitalize()}] {label}")
+
+    child_path = f"{path} > {name}".strip(" >") if name else path
+    for child in node.get("children", []):
+        _extract_figma_text(child, out, child_path, depth + 1)
 
 
 @router.delete("/connectors/{connector_id}", status_code=status.HTTP_204_NO_CONTENT)

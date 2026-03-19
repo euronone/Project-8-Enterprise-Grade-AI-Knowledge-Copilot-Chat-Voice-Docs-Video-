@@ -10,7 +10,7 @@ import ReactMarkdown from 'react-markdown';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import apiClient from '@/lib/api/client';
+import { getToken } from '@/lib/api/client';
 
 interface Source {
   id: string;
@@ -41,7 +41,8 @@ export default function ResearchAgentPage() {
     setStatusMsg('Searching knowledge base...');
 
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = await getToken();
+      if (!token) { setError('Not authenticated. Please log in again.'); setStatus('error'); return; }
       const response = await fetch(
         `${process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8000'}/agents/research/run`,
         {
