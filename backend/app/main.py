@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import auth, conversations, knowledge, search, analytics, voice, meetings, agents, workflows
+from app.routers import auth, conversations, knowledge, search, analytics, voice, meetings, agents, workflows, admin
 
 # Configure logging
 logging.basicConfig(
@@ -63,6 +63,7 @@ app.include_router(voice.router, prefix="/voice", tags=["Voice"])
 app.include_router(meetings.router, prefix="/meetings", tags=["Meetings"])
 app.include_router(agents.router, prefix="/agents", tags=["Agents"])
 app.include_router(workflows.router, prefix="/workflows", tags=["Workflows"])
+app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────
