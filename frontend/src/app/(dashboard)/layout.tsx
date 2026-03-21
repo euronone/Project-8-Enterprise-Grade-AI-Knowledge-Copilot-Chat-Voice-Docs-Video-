@@ -1,3 +1,5 @@
+'use client';
+
 import { CommandPalette } from '@/components/layout/CommandPalette';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';

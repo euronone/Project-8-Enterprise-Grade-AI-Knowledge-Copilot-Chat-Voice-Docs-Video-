@@ -79,7 +79,7 @@ async def create_conversation(
     conv = Conversation(
         user_id=current_user.id,
         title=body.title or "New Conversation",
-        model=body.model or "claude-3-5-sonnet",
+        model=body.model or "gpt-4o-mini",
     )
     db.add(conv)
     await db.flush()

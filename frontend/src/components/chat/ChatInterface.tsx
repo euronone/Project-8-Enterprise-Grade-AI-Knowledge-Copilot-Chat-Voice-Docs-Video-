@@ -1,12 +1,12 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ChevronDown, PanelRight, PanelRightClose } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 import { Button } from '@/components/ui/Button';
-import { useStreamingMessage } from '@/hooks/useChat';
+import { useMessages, useStreamingMessage } from '@/hooks/useChat';
 import * as knowledgeApi from '@/lib/api/knowledge';
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/stores/chatStore';
@@ -28,15 +28,25 @@ const MODELS: Array<{ id: AIModel; name: string; provider: string }> = [
 
 interface ChatInterfaceProps {
   conversationId: string;
+  initialMessage?: string;
 }
 
-export function ChatInterface({ conversationId }: ChatInterfaceProps) {
+export function ChatInterface({ conversationId, initialMessage }: ChatInterfaceProps) {
   const { messages, selectedModel, setModel } = useChatStore();
   const { sendMessage, abort } = useStreamingMessage();
+  const { isLoading: messagesLoading } = useMessages(conversationId);
   const [showSources, setShowSources] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const initialSentRef = useRef(false);
 
   const conversationMessages = messages[conversationId] ?? [];
+
+  useEffect(() => {
+    if (initialMessage && !initialSentRef.current && !messagesLoading) {
+      initialSentRef.current = true;
+      void sendMessage({ conversationId, content: initialMessage, model: selectedModel });
+    }
+  }, [initialMessage, messagesLoading, conversationId, selectedModel, sendMessage]);
 
   const allSources = useMemo(() => {
     const seen = new Set<string>();
@@ -150,7 +160,7 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
       <div className="flex flex-1 overflow-hidden">
         {/* Messages */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          <MessageList messages={conversationMessages} />
+          <MessageList messages={conversationMessages} isLoading={messagesLoading} />
           <MessageInput onAbort={abort} onSend={handleSend} />
         </div>
 

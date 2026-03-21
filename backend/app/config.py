@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/knowledgeforge"
+    DATABASE_SSL: bool = False
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"

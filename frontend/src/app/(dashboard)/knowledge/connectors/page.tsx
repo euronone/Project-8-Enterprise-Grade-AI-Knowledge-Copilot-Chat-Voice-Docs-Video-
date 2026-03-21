@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { ConnectorCard } from '@/components/knowledge/ConnectorCard';
 import { FigmaConnectModal } from '@/components/knowledge/FigmaConnectModal';
+import { GitHubConnectModal } from '@/components/knowledge/GitHubConnectModal';
+import { GoogleDriveConnectModal } from '@/components/knowledge/GoogleDriveConnectModal';
 import * as knowledgeApi from '@/lib/api/knowledge';
 import { useKnowledgeStore } from '@/stores/knowledgeStore';
 
@@ -132,14 +134,19 @@ export default function ConnectorsPage() {
           {openModal === 'figma' && (
             <FigmaConnectModal onClose={() => setOpenModal(null)} />
           )}
-          {openModal && openModal !== 'figma' && (
+          {openModal === 'github' && (
+            <GitHubConnectModal onClose={() => setOpenModal(null)} />
+          )}
+          {openModal === 'google_drive' && (
+            <GoogleDriveConnectModal onClose={() => setOpenModal(null)} />
+          )}
+          {openModal && !['figma', 'github', 'google_drive'].includes(openModal) && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
               <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl dark:bg-surface-900">
                 <p className="text-2xl mb-2">🚧</p>
                 <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100 mb-1">Coming Soon</h3>
                 <p className="text-sm text-surface-500 mb-4">
-                  The <strong>{AVAILABLE_CONNECTORS.find(c => c.type === openModal)?.name}</strong> connector is not yet implemented.
-                  Figma is the currently active connector.
+                  The <strong>{AVAILABLE_CONNECTORS.find(c => c.type === openModal)?.name}</strong> connector is coming soon.
                 </p>
                 <button
                   onClick={() => setOpenModal(null)}

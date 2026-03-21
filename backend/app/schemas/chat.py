@@ -94,7 +94,7 @@ class SourceCitation(BaseModel):
 
 class CreateConversationRequest(BaseModel):
     title: Optional[str] = None
-    model: Optional[str] = "claude-3-5-sonnet"
+    model: Optional[str] = "gpt-4o-mini"
 
 
 class UpdateConversationRequest(BaseModel):

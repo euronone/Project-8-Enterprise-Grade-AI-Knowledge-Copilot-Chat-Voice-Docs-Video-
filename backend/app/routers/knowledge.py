@@ -257,6 +257,18 @@ async def sync_connector(
             await db.flush()
             return {"message": f"Figma sync complete: {chunks_created} chunks indexed", "connectorId": str(connector_id)}
 
+        if connector.type == "github":
+            chunks_created = await _sync_github(connector, current_user.id, db)
+            connector.status = ConnectorStatus.connected
+            await db.flush()
+            return {"message": f"GitHub sync complete: {chunks_created} chunks indexed", "connectorId": str(connector_id)}
+
+        if connector.type == "google_drive":
+            chunks_created = await _sync_google_drive(connector, current_user.id, db)
+            connector.status = ConnectorStatus.connected
+            await db.flush()
+            return {"message": f"Google Drive sync complete: {chunks_created} chunks indexed", "connectorId": str(connector_id)}
+
         # Generic / unimplemented connector types — mark connected without real sync
         connector.status = ConnectorStatus.connected
         await db.flush()
@@ -378,6 +390,250 @@ def _extract_figma_text(node: Dict[str, Any], out: List[str], path: str, depth: 
     child_path = f"{path} > {name}".strip(" >") if name else path
     for child in node.get("children", []):
         _extract_figma_text(child, out, child_path, depth + 1)
+
+
+async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSession) -> int:
+    """
+    Fetch text files from a GitHub repository and store as DocumentChunks for RAG.
+    Requires a Personal Access Token and a repository URL in the connector config.
+    """
+    import base64
+    import re
+    import httpx
+
+    cfg: Dict[str, Any] = connector.config or {}
+    token: str = cfg.get("accessToken", "")
+    repo_url: str = cfg.get("repoUrl", "")
+    branch: str = cfg.get("branch", "") or "main"
+
+    if not token:
+        raise ValueError("GitHub Personal Access Token is required")
+    if not repo_url:
+        raise ValueError("GitHub repository URL is required")
+
+    m = re.search(r"github\.com/([^/\s]+)/([^/\s?#]+)", repo_url)
+    if not m:
+        raise ValueError(f"Cannot extract owner/repo from URL: {repo_url}")
+    owner = m.group(1)
+    repo = m.group(2).rstrip(".git")
+
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+
+    TEXT_EXTENSIONS = {
+        ".md", ".txt", ".py", ".js", ".ts", ".jsx", ".tsx", ".json",
+        ".yaml", ".yml", ".rst", ".html", ".css", ".java", ".go",
+        ".rb", ".php", ".sh", ".sql", ".toml", ".ini", ".env.example",
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        # Verify token & get default branch if not specified
+        repo_resp = await client.get(
+            f"https://api.github.com/repos/{owner}/{repo}",
+            headers=headers,
+        )
+        if repo_resp.status_code == 401:
+            raise ValueError("Invalid GitHub token or insufficient permissions")
+        if repo_resp.status_code == 404:
+            raise ValueError(f"Repository not found: {owner}/{repo}")
+        if repo_resp.status_code != 200:
+            raise ValueError(f"GitHub API error {repo_resp.status_code}: {repo_resp.text[:200]}")
+
+        repo_data = repo_resp.json()
+        if not branch or branch == "main":
+            branch = repo_data.get("default_branch", "main")
+
+        # Get full file tree
+        tree_resp = await client.get(
+            f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1",
+            headers=headers,
+        )
+        if tree_resp.status_code != 200:
+            raise ValueError(f"Could not fetch repository tree: {tree_resp.text[:200]}")
+
+        tree_data = tree_resp.json()
+        all_files = [
+            f for f in tree_data.get("tree", [])
+            if f.get("type") == "blob"
+            and any(f["path"].lower().endswith(ext) for ext in TEXT_EXTENSIONS)
+            and f.get("size", 0) < 200_000  # skip files > 200 KB
+        ]
+
+        # Limit to first 100 files to avoid rate limits
+        selected_files = all_files[:100]
+
+        chunks_text: List[str] = []
+        for file in selected_files:
+            try:
+                content_resp = await client.get(
+                    f"https://api.github.com/repos/{owner}/{repo}/contents/{file['path']}",
+                    headers={**headers, "ref": branch},
+                )
+                if content_resp.status_code != 200:
+                    continue
+                content_data = content_resp.json()
+                raw = base64.b64decode(content_data.get("content", "")).decode("utf-8", errors="replace")
+                # Trim very long files
+                if len(raw) > 4000:
+                    raw = raw[:4000] + "\n... [truncated]"
+                if raw.strip():
+                    chunks_text.append(f"[{file['path']}]\n{raw.strip()}")
+            except Exception:
+                continue
+
+    if not chunks_text:
+        chunks_text = [f"GitHub repo '{owner}/{repo}' (branch: {branch}) — no readable text files found."]
+
+    doc_name = f"[GitHub] {owner}/{repo}"
+
+    # Remove previous sync documents for this connector
+    existing = await db.execute(
+        select(Document).where(Document.user_id == user_id, Document.name == doc_name)
+    )
+    for old_doc in existing.scalars().all():
+        await db.delete(old_doc)
+    await db.flush()
+
+    doc = Document(
+        user_id=user_id,
+        name=doc_name,
+        original_name=f"{repo}.github",
+        file_path=f"github://{owner}/{repo}",
+        file_type="github",
+        file_size=sum(len(t) for t in chunks_text),
+        status="ready",
+        word_count=sum(len(t.split()) for t in chunks_text),
+    )
+    db.add(doc)
+    await db.flush()
+
+    for idx, text in enumerate(chunks_text):
+        db.add(DocumentChunk(
+            document_id=doc.id,
+            content=text,
+            chunk_index=idx,
+            token_count=len(text.split()),
+        ))
+
+    await db.flush()
+    return len(chunks_text)
+
+
+async def _sync_google_drive(connector: "Connector", user_id: uuid.UUID, db: AsyncSession) -> int:
+    """
+    Fetch documents from a Google Drive folder using an OAuth2 access token.
+    Requires an access token and a folder ID (or 'root') in the connector config.
+    """
+    import httpx
+
+    cfg: Dict[str, Any] = connector.config or {}
+    access_token: str = cfg.get("accessToken", "")
+    folder_id: str = cfg.get("folderId", "root")
+
+    if not access_token:
+        raise ValueError("Google OAuth access token is required")
+
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    # MIME types that can be exported as plain text
+    EXPORT_TYPES: Dict[str, str] = {
+        "application/vnd.google-apps.document": "text/plain",
+        "application/vnd.google-apps.spreadsheet": "text/csv",
+        "application/vnd.google-apps.presentation": "text/plain",
+    }
+    # MIME types we can download directly
+    DIRECT_TYPES = {"text/plain", "text/markdown", "application/json", "text/csv"}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        # Verify token & list files in the folder
+        list_resp = await client.get(
+            "https://www.googleapis.com/drive/v3/files",
+            headers=headers,
+            params={
+                "q": f"'{folder_id}' in parents and trashed=false",
+                "fields": "files(id,name,mimeType,size)",
+                "pageSize": "50",
+            },
+        )
+        if list_resp.status_code == 401:
+            raise ValueError("Invalid or expired Google access token. Please reconnect.")
+        if list_resp.status_code != 200:
+            raise ValueError(f"Google Drive API error {list_resp.status_code}: {list_resp.text[:200]}")
+
+        files_data = list_resp.json().get("files", [])
+
+        if not files_data:
+            raise ValueError("No files found in the specified Google Drive folder")
+
+        chunks_text: List[str] = []
+        folder_name = folder_id
+
+        for file in files_data:
+            file_id = file["id"]
+            file_name = file["name"]
+            mime = file.get("mimeType", "")
+
+            try:
+                if mime in EXPORT_TYPES:
+                    export_resp = await client.get(
+                        f"https://www.googleapis.com/drive/v3/files/{file_id}/export",
+                        headers=headers,
+                        params={"mimeType": EXPORT_TYPES[mime]},
+                    )
+                    if export_resp.status_code == 200:
+                        content = export_resp.text[:5000]
+                        if content.strip():
+                            chunks_text.append(f"[{file_name}]\n{content.strip()}")
+                elif mime in DIRECT_TYPES:
+                    dl_resp = await client.get(
+                        f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media",
+                        headers=headers,
+                    )
+                    if dl_resp.status_code == 200:
+                        content = dl_resp.text[:5000]
+                        if content.strip():
+                            chunks_text.append(f"[{file_name}]\n{content.strip()}")
+            except Exception:
+                continue
+
+    if not chunks_text:
+        chunks_text = [f"Google Drive folder '{folder_id}' — no readable text documents found."]
+
+    doc_name = f"[Google Drive] {folder_name}"
+
+    # Remove previous sync documents
+    existing = await db.execute(
+        select(Document).where(Document.user_id == user_id, Document.name == doc_name)
+    )
+    for old_doc in existing.scalars().all():
+        await db.delete(old_doc)
+    await db.flush()
+
+    doc = Document(
+        user_id=user_id,
+        name=doc_name,
+        original_name=f"google_drive_{folder_id}.gdrive",
+        file_path=f"gdrive://{folder_id}",
+        file_type="google_drive",
+        file_size=sum(len(t) for t in chunks_text),
+        status="ready",
+        word_count=sum(len(t.split()) for t in chunks_text),
+    )
+    db.add(doc)
+    await db.flush()
+
+    for idx, text in enumerate(chunks_text):
+        db.add(DocumentChunk(
+            document_id=doc.id,
+            content=text,
+            chunk_index=idx,
+            token_count=len(text.split()),
+        ))
+
+    await db.flush()
+    return len(chunks_text)
 
 
 @router.delete("/connectors/{connector_id}", status_code=status.HTTP_204_NO_CONTENT)

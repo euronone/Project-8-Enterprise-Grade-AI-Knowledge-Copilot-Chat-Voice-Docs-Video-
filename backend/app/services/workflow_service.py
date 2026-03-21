@@ -87,10 +87,14 @@ async def _run_step(
 
 
 def _resolve(template: str, variables: Dict[str, Any]) -> str:
-    """Replace {variable_name} placeholders with values from variables dict."""
+    """Replace {variable_name} placeholders with values from variables dict.
+    Any unresolved placeholders are removed so they don't leak into queries."""
+    import re
     result = template
     for k, v in variables.items():
         result = result.replace(f"{{{k}}}", str(v) if v is not None else "")
+    # Strip any remaining unresolved {placeholders}
+    result = re.sub(r"\{[^}]+\}", "", result).strip()
     return result
 
 
@@ -101,8 +105,14 @@ async def _step_search_knowledge(
 ) -> Dict[str, Any]:
     from app.services.ai_service import _search_relevant_chunks
 
-    query_template: str = config.get("query", "{filename}")
+    query_template: str = config.get("query", "")
     query = _resolve(query_template, variables)
+
+    # If query is empty after resolving (e.g. {filename} but no filename in scope),
+    # fall back to a broad sweep of the knowledge base
+    if not query:
+        query = "document summary overview key points"
+
     limit = int(config.get("limit", 5))
 
     chunks = await _search_relevant_chunks(query, db, limit=limit)
@@ -119,8 +129,11 @@ async def _step_ai_summarize(
     config: Dict[str, Any], variables: Dict[str, Any]
 ) -> Dict[str, Any]:
     text = _resolve(config.get("text", "{context}"), variables)
+    # Also check variables directly if template resolved to empty
     if not text.strip():
-        return {"output": "Nothing to summarize (empty context)", "outputs": {"summary": ""}}
+        text = variables.get("context", "")
+    if not text.strip():
+        return {"output": "Nothing to summarize — no content found in knowledge base", "outputs": {"summary": "No content available to summarize. Upload documents to the Knowledge base first."}}
 
     prompt = (
         config.get("prompt")

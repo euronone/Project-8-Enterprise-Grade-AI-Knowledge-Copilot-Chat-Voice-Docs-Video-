@@ -35,7 +35,7 @@ class Conversation(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False, default="New Conversation")
-    model: Mapped[str] = mapped_column(String(100), nullable=False, default="claude-3-5-sonnet")
+    model: Mapped[str] = mapped_column(String(100), nullable=False, default="gpt-4o-mini")
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_shared: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     share_token: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)

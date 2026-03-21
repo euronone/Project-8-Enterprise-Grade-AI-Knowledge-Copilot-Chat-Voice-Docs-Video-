@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   ArrowUp,
+  Mic,
   Paperclip,
   Square,
   X,
@@ -35,8 +36,92 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
   const [attachments, setAttachments] = useState<File[]>([]);
   const [showSlashCommands, setShowSlashCommands] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
+
+  type SpeechRecognitionCtor = new () => {
+    continuous: boolean;
+    interimResults: boolean;
+    lang: string;
+    onstart: (() => void) | null;
+    onresult: ((e: { resultIndex: number; results: { isFinal: boolean; 0: { transcript: string } }[] }) => void) | null;
+    onend: (() => void) | null;
+    onerror: (() => void) | null;
+    start: () => void;
+    stop: () => void;
+  };
+
+  const getSpeechRecognition = (): SpeechRecognitionCtor | null => {
+    if (typeof window === 'undefined') return null;
+    return (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition ?? null
+    );
+  };
+
+  useEffect(() => {
+    setVoiceSupported(!!getSpeechRecognition());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startListening = useCallback(() => {
+    const SpeechRecognition = getSpeechRecognition();
+    if (!SpeechRecognition || isListening) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    let baseText = '';
+
+    recognition.onstart = () => {
+      baseText = value.trimEnd();
+    };
+
+    recognition.onresult = (event: { resultIndex: number; results: Array<{ isFinal: boolean; 0: { transcript: string } }> }) => {
+      let interim = '';
+      let final = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (!result) continue;
+        const t = result[0].transcript;
+        if (result.isFinal) final += t;
+        else interim += t;
+      }
+      const spoken = final || interim;
+      setValue(baseText ? `${baseText} ${spoken}` : spoken);
+      const ta = textareaRef.current;
+      if (ta) {
+        ta.style.height = 'auto';
+        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      }
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+      textareaRef.current?.focus();
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  }, [isListening, value]);
+
+  const stopListening = useCallback(() => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+  }, []);
 
   const isStreaming = streaming.isStreaming;
   const canSend = (value.trim().length > 0 || attachments.length > 0) && !disabled;
@@ -160,6 +245,29 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
             <Paperclip className="h-5 w-5" />
           </label>
         </div>
+
+        {/* Voice input button — hold to talk, release to stop */}
+        {voiceSupported && (
+          <div className="shrink-0">
+            <button
+              type="button"
+              title="Hold to speak"
+              onMouseDown={startListening}
+              onMouseUp={stopListening}
+              onMouseLeave={stopListening}
+              onTouchStart={(e) => { e.preventDefault(); startListening(); }}
+              onTouchEnd={stopListening}
+              className={cn(
+                'flex items-center justify-center rounded-md p-1.5 transition-colors select-none',
+                isListening
+                  ? 'animate-pulse bg-red-100 text-red-500 dark:bg-red-950'
+                  : 'text-surface-400 hover:bg-surface-100 hover:text-surface-600 dark:hover:bg-surface-800 dark:hover:text-surface-300'
+              )}
+            >
+              <Mic className="h-5 w-5" />
+            </button>
+          </div>
+        )}
 
         {/* Dropzone + textarea + send button */}
         <div
