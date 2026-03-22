@@ -1,21 +1,18 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import {
-  Calendar,
-  CheckSquare,
+  AlertCircle,
+  CheckCircle,
   Clock,
-  FileText,
-  Mic,
-  MicOff,
-  Phone,
-  Play,
-  Plus,
-  Users,
+  Film,
+  Loader2,
+  MessageSquare,
+  Trash2,
+  Upload,
   Video,
-  VideoOff,
-  X,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/Badge';
@@ -23,537 +20,352 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { cn } from '@/lib/utils';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010';
 
-interface Meeting {
+interface VideoDoc {
   id: string;
-  title: string;
+  name: string;
+  originalName: string;
+  fileType: string;
+  fileSize: number;
   status: string;
-  scheduled_at: string | null;
-  started_at: string | null;
-  ended_at: string | null;
-  duration_minutes: number | null;
-  participants: string[];
-  recap: Record<string, unknown>;
-  action_items: { id: string; description: string; assignee: string; status: string }[];
-  created_at: string;
+  wordCount: number | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 async function apiFetch(path: string, options?: RequestInit) {
-  const token = localStorage.getItem('accessToken');
+  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : '';
   return fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
       ...(options?.headers ?? {}),
     },
   });
 }
 
-function formatDate(iso: string | null) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// ── Meeting Room ──────────────────────────────────────────────────────────────
-function MeetingRoom({ meeting, onEnd }: { meeting: Meeting; onEnd: () => void }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [micOn, setMicOn] = useState(true);
-  const [camOn, setCamOn] = useState(true);
-  const [transcript, setTranscript] = useState<string[]>([]);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  // Ref so onend closure always reads the LATEST mic state
-  const micOnRef = useRef(true);
-  const [elapsed, setElapsed] = useState(0);
-  const [camStatus, setCamStatus] = useState<'loading' | 'ok' | 'error'>('loading');
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
-  // Keep micOnRef in sync with micOn state
-  useEffect(() => { micOnRef.current = micOn; }, [micOn]);
-
-  // Start camera + mic on mount
-  useEffect(() => {
-    let mounted = true;
-
-    const startMedia = async () => {
-      let mediaStream: MediaStream | null = null;
-      try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      } catch {
-        try {
-          mediaStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-          if (mounted) setCamStatus('error');
-        } catch {
-          if (mounted) setCamStatus('error');
-        }
-      }
-
-      if (mediaStream && mounted) {
-        setStream(mediaStream);
-        if (videoRef.current) {
-          videoRef.current.srcObject = mediaStream;
-          videoRef.current.play().catch(() => {});
-        }
-        const hasVideo = mediaStream.getVideoTracks().length > 0;
-        setCamStatus(hasVideo ? 'ok' : 'error');
-      }
-    };
-
-    startMedia();
-
-    // Web Speech API — onend uses micOnRef so it always checks the CURRENT mic state
-    const SpeechRecognition =
-      window.SpeechRecognition ??
-      (window as unknown as { webkitSpeechRecognition: typeof window.SpeechRecognition }).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const rec = new SpeechRecognition();
-      rec.continuous = true;
-      rec.interimResults = false;
-      rec.lang = 'en-US';
-      rec.onresult = (e) => {
-        const text = Array.from(e.results)
-          .slice(e.resultIndex)
-          .map((r) => r[0].transcript)
-          .join(' ');
-        if (text.trim()) setTranscript((prev) => [...prev, text.trim()]);
-      };
-      rec.onerror = () => {};
-      rec.onend = () => {
-        // Only auto-restart if mic is currently ON and component is still mounted
-        if (mounted && recognitionRef.current && micOnRef.current) {
-          try { recognitionRef.current.start(); } catch { /* already started */ }
-        }
-      };
-      try { rec.start(); } catch { /* not supported */ }
-      recognitionRef.current = rec;
-    }
-
-    const timer = setInterval(() => setElapsed((s) => s + 1), 1000);
-    return () => {
-      mounted = false;
-      clearInterval(timer);
-      recognitionRef.current?.stop();
-      recognitionRef.current = null;
-    };
-  }, []);
-
-  // Toggle mic: mute audio track AND pause/resume SpeechRecognition
-  useEffect(() => {
-    stream?.getAudioTracks().forEach((t) => { t.enabled = micOn; });
-    if (!recognitionRef.current) return;
-    if (micOn) {
-      try { recognitionRef.current.start(); } catch { /* already running */ }
-    } else {
-      try { recognitionRef.current.stop(); } catch { /* already stopped */ }
-    }
-  }, [micOn, stream]);
-
-  // Toggle camera: enable/disable video track
-  useEffect(() => {
-    stream?.getVideoTracks().forEach((t) => { t.enabled = camOn; });
-  }, [camOn, stream]);
-
-  const handleEnd = async () => {
-    stream?.getTracks().forEach((t) => t.stop());
-    recognitionRef.current?.stop();
-    recognitionRef.current = null;
-    onEnd();
-  };
-
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const timeStr = `${pad(Math.floor(elapsed / 3600))}:${pad(Math.floor((elapsed % 3600) / 60))}:${pad(elapsed % 60)}`;
-
+function StatusBadge({ status }: { status: string }) {
+  if (status === 'indexed') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
+        <CheckCircle className="h-3.5 w-3.5" /> Ready
+      </span>
+    );
+  }
+  if (status === 'processing') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Transcribing…
+      </span>
+    );
+  }
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-gray-950 text-white">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 bg-gray-900 border-b border-gray-800">
-        <div>
-          <h2 className="font-semibold">{meeting.title}</h2>
-          <p className="text-sm text-gray-400 flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse inline-block" />
-            Live · {timeStr}
-          </p>
-        </div>
-        <Badge variant="danger" size="sm">Recording</Badge>
-      </div>
-
-      {/* Main */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Video */}
-        <div className="flex flex-1 items-center justify-center bg-gray-950 p-4">
-          <div className="relative aspect-video w-full max-w-3xl rounded-2xl overflow-hidden bg-gray-800">
-            {/* Always render video element so ref is available */}
-            <video
-              ref={videoRef}
-              autoPlay
-              muted
-              playsInline
-              className={cn(
-                'h-full w-full object-cover transition-opacity',
-                (camStatus !== 'ok' || !camOn) && 'opacity-0 absolute inset-0'
-              )}
-            />
-
-            {/* Overlays */}
-            {camStatus === 'loading' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-gray-400">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-indigo-400" />
-                <p className="text-sm">Starting camera…</p>
-              </div>
-            )}
-            {camStatus === 'error' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-gray-400">
-                <VideoOff className="h-10 w-10" />
-                <p className="text-sm text-center px-4">
-                  Camera unavailable.<br />
-                  <span className="text-xs text-gray-500">Allow camera in browser settings and reload.</span>
-                </p>
-              </div>
-            )}
-            {camStatus === 'ok' && !camOn && (
-              <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
-                <VideoOff className="h-12 w-12 text-gray-500" />
-              </div>
-            )}
-
-            <div className="absolute bottom-3 left-3 rounded-md bg-black/60 px-2 py-1 text-xs z-10">You</div>
-          </div>
-        </div>
-
-        {/* Live Transcript */}
-        <div className="w-72 flex flex-col border-l border-gray-800 bg-gray-900">
-          <div className="px-4 py-3 border-b border-gray-800 text-sm font-medium text-gray-300 flex items-center gap-2">
-            <Mic className="h-3.5 w-3.5 text-indigo-400" />
-            Live Transcript
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
-            {transcript.length === 0 ? (
-              <p className="text-xs text-gray-500">Speak — transcript appears here in real time.</p>
-            ) : (
-              transcript.map((line, i) => (
-                <p key={i} className="text-xs text-gray-300 leading-relaxed border-l-2 border-indigo-500 pl-2">{line}</p>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div className="flex items-center justify-center gap-4 py-5 bg-gray-900 border-t border-gray-800">
-        <button
-          onClick={() => setMicOn(!micOn)}
-          title={micOn ? 'Mute mic' : 'Unmute mic'}
-          className={cn('flex h-12 w-12 items-center justify-center rounded-full transition-colors',
-            micOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700')}
-        >
-          {micOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-        </button>
-        <button
-          onClick={() => setCamOn(!camOn)}
-          title={camOn ? 'Turn off camera' : 'Turn on camera'}
-          className={cn('flex h-12 w-12 items-center justify-center rounded-full transition-colors',
-            camOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700')}
-        >
-          {camOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-        </button>
-        <button
-          onClick={handleEnd}
-          title="End meeting"
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-red-600 hover:bg-red-700 transition-colors"
-        >
-          <Phone className="h-5 w-5 rotate-[135deg]" />
-        </button>
-      </div>
-    </div>
+    <span className="inline-flex items-center gap-1 text-xs font-medium text-red-500">
+      <AlertCircle className="h-3.5 w-3.5" /> Failed
+    </span>
   );
 }
 
-// ── Schedule Modal ─────────────────────────────────────────────────────────────
-function ScheduleModal({ onClose, onCreated }: { onClose: () => void; onCreated: (m: Meeting) => void }) {
-  const [title, setTitle] = useState('');
-  const [date, setDate] = useState('');
-  const [duration, setDuration] = useState('30');
-  const [loading, setLoading] = useState(false);
+// ── Upload zone ────────────────────────────────────────────────────────────────
+function UploadZone({ onUploaded }: { onUploaded: (doc: VideoDoc) => void }) {
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const [progress, setProgress] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleSubmit = async () => {
-    if (!title.trim()) { setError('Title is required'); return; }
-    setLoading(true);
+  const handleFile = useCallback(async (file: File) => {
+    setError('');
+    setUploading(true);
+    setProgress(`Uploading ${file.name}…`);
+
     try {
-      const res = await apiFetch('/meetings', {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await apiFetch('/knowledge/videos/upload', {
         method: 'POST',
-        body: JSON.stringify({
-          title: title.trim(),
-          scheduledAt: date ? new Date(date).toISOString() : null,
-          durationMinutes: parseInt(duration),
-        }),
+        body: formData,
       });
-      if (res.ok) {
-        const m = await res.json();
-        onCreated(m);
-      } else {
-        setError('Failed to create meeting. Please try again.');
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.detail ?? 'Upload failed');
+        return;
       }
+
+      setProgress('');
+      onUploaded(data as VideoDoc);
     } catch {
       setError('Network error. Is the backend running?');
+    } finally {
+      setUploading(false);
     }
-    setLoading(false);
+  }, [onUploaded]);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  }, [handleFile]);
+
+  return (
+    <Card variant="bordered" className="bg-white dark:bg-surface-900">
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+        onClick={() => !uploading && inputRef.current?.click()}
+        className={cn(
+          'flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-10 transition-colors cursor-pointer',
+          dragging
+            ? 'border-brand-500 bg-brand-50 dark:bg-brand-950'
+            : 'border-surface-200 hover:border-brand-400 dark:border-surface-700',
+          uploading && 'pointer-events-none opacity-60',
+        )}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          className="hidden"
+          accept="video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm,audio/mpeg,audio/wav,audio/mp4,audio/ogg,.mp4,.mov,.avi,.mkv,.webm,.mp3,.wav,.m4a,.ogg"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+        />
+
+        {uploading ? (
+          <>
+            <Loader2 className="h-10 w-10 animate-spin text-brand-500" />
+            <p className="text-sm text-surface-600 dark:text-surface-400">{progress}</p>
+            <p className="text-xs text-surface-400">Transcribing with OpenAI Whisper — this may take a minute…</p>
+          </>
+        ) : (
+          <>
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-100 dark:bg-brand-950">
+              <Upload className="h-7 w-7 text-brand-600" />
+            </div>
+            <div className="text-center">
+              <p className="font-medium text-surface-800 dark:text-surface-200">
+                Drop a video or audio file here
+              </p>
+              <p className="mt-1 text-sm text-surface-500">
+                MP4, MOV, AVI, MKV, WebM, MP3, WAV, M4A · Max 100 MB
+              </p>
+            </div>
+            <Button size="sm" variant="outline">Browse files</Button>
+          </>
+        )}
+      </div>
+
+      {error && (
+        <div className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950 dark:text-red-400">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          {error}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ── Video card ─────────────────────────────────────────────────────────────────
+function VideoCard({ doc, onDelete, onChat }: { doc: VideoDoc; onDelete: (id: string) => void; onChat: (doc: VideoDoc) => void }) {
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!confirm(`Delete "${doc.name}"? This will also remove it from the knowledge base.`)) return;
+    setDeleting(true);
+    try {
+      await apiFetch(`/knowledge/documents/${doc.id}`, { method: 'DELETE' });
+      onDelete(doc.id);
+    } catch {
+      alert('Delete failed');
+    }
+    setDeleting(false);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <Card variant="bordered" className="w-full max-w-md bg-white dark:bg-surface-900">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">Schedule Meeting</h2>
-          <button onClick={onClose}><X className="h-5 w-5 text-surface-400" /></button>
+    <div className="flex items-center gap-4 py-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 dark:bg-violet-950 text-violet-600">
+        <Film className="h-5 w-5" />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium text-surface-900 dark:text-surface-100 text-sm">{doc.name}</p>
+        <div className="mt-0.5 flex items-center gap-3 text-xs text-surface-400">
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {formatDate(doc.createdAt)}
+          </span>
+          <span>{formatBytes(doc.fileSize)}</span>
+          {doc.wordCount && <span>{doc.wordCount.toLocaleString()} words transcribed</span>}
         </div>
-        {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-surface-700 dark:text-surface-300">Title *</label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Sprint Planning"
-              className="w-full rounded-lg border border-surface-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none dark:border-surface-700 dark:bg-surface-800 dark:text-surface-100"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-surface-700 dark:text-surface-300">Scheduled At (optional)</label>
-            <input
-              type="datetime-local"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full rounded-lg border border-surface-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none dark:border-surface-700 dark:bg-surface-800 dark:text-surface-100"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-surface-700 dark:text-surface-300">Duration</label>
-            <select
-              value={duration}
-              onChange={(e) => setDuration(e.target.value)}
-              className="w-full rounded-lg border border-surface-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none dark:border-surface-700 dark:bg-surface-800 dark:text-surface-100"
-            >
-              {['15', '30', '45', '60', '90', '120'].map((d) => (
-                <option key={d} value={d}>{d} minutes</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={handleSubmit} disabled={!title.trim() || loading}>
-            {loading ? 'Creating…' : 'Create Meeting'}
+      </div>
+
+      <div className="flex items-center gap-3 shrink-0">
+        <StatusBadge status={doc.status} />
+
+        {doc.status === 'indexed' && (
+          <Button
+            size="sm"
+            leftIcon={<MessageSquare className="h-3.5 w-3.5" />}
+            onClick={() => onChat(doc)}
+          >
+            Chat
           </Button>
-        </div>
-      </Card>
+        )}
+
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-surface-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950 transition-colors"
+          title="Delete video"
+        >
+          {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+        </button>
+      </div>
     </div>
   );
 }
 
-// ── Main Page ──────────────────────────────────────────────────────────────────
-export default function VideoPage() {
-  const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
+// ── Main page ──────────────────────────────────────────────────────────────────
+export default function VideoLibraryPage() {
+  const router = useRouter();
+  const [videos, setVideos] = useState<VideoDoc[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeMeeting, setActiveMeeting] = useState<Meeting | null>(null);
-  const [showSchedule, setShowSchedule] = useState(false);
-  const [micOn, setMicOn] = useState(true);
-  const [camOn, setCamOn] = useState(true);
 
-  const loadMeetings = async (t: 'upcoming' | 'past') => {
-    setLoading(true);
+  const loadVideos = async () => {
     try {
-      const res = await apiFetch(`/meetings?tab=${t}`);
-      if (res.ok) setMeetings(await res.json());
+      const res = await apiFetch('/knowledge/documents?documentType=video&pageSize=50');
+      if (res.ok) {
+        const data = await res.json();
+        setVideos(data.items ?? []);
+      }
     } catch { /* ignore */ }
     setLoading(false);
   };
 
-  useEffect(() => { loadMeetings(tab); }, [tab]);
+  useEffect(() => { loadVideos(); }, []);
 
-  const startInstant = async () => {
-    const res = await apiFetch('/meetings', {
-      method: 'POST',
-      body: JSON.stringify({ title: 'Instant Meeting', scheduledAt: null, durationMinutes: 60 }),
-    });
-    if (res.ok) {
-      const m = await res.json();
-      setActiveMeeting(m);
+  const handleUploaded = (doc: VideoDoc) => {
+    setVideos((prev) => [doc, ...prev]);
+  };
+
+  const handleDelete = (id: string) => {
+    setVideos((prev) => prev.filter((v) => v.id !== id));
+  };
+
+  const handleChat = async (doc: VideoDoc) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`${API_BASE}/conversations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title: `Chat: ${doc.name}` }),
+      });
+      if (res.ok) {
+        const conv = await res.json();
+        router.push(`/chat/${conv.id}`);
+      }
+    } catch {
+      router.push('/chat');
     }
   };
 
-  const handleMeetingEnd = () => {
-    setActiveMeeting(null);
-    loadMeetings(tab);
-  };
-
   return (
-    <>
-      {activeMeeting && <MeetingRoom meeting={activeMeeting} onEnd={handleMeetingEnd} />}
-      {showSchedule && (
-        <ScheduleModal
-          onClose={() => setShowSchedule(false)}
-          onCreated={(m) => { setMeetings((prev) => [m, ...prev]); setShowSchedule(false); }}
-        />
-      )}
-
-      <div className="flex h-full flex-col overflow-y-auto bg-surface-50 dark:bg-surface-950">
-        {/* Header */}
-        <div className="border-b border-surface-100 bg-white px-6 py-5 dark:border-surface-800 dark:bg-surface-950">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-xl font-semibold text-surface-900 dark:text-surface-100">Meeting Intelligence</h1>
-              <p className="mt-0.5 text-sm text-surface-500">
-                AI-powered meetings with live transcription, recaps, and action item extraction.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" leftIcon={<Calendar className="h-4 w-4" />} onClick={() => setShowSchedule(true)}>
-                Schedule
-              </Button>
-              <Button size="sm" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowSchedule(true)}>
-                New Meeting
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex-1 p-6 space-y-6">
-
-          {/* Start Instant */}
-          <Card variant="bordered" className="bg-gradient-to-br from-indigo-600 to-violet-600 border-0 text-white">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold">Start an Instant Meeting</h2>
-                <p className="mt-1 text-sm text-indigo-100">
-                  Your browser handles camera + mic. Live speech transcription starts automatically.
-                </p>
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <button
-                  onClick={() => setMicOn(!micOn)}
-                  className={cn('flex h-10 w-10 items-center justify-center rounded-full transition-colors',
-                    micOn ? 'bg-white/20 hover:bg-white/30' : 'bg-red-500 hover:bg-red-600')}
-                >
-                  {micOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-                </button>
-                <button
-                  onClick={() => setCamOn(!camOn)}
-                  className={cn('flex h-10 w-10 items-center justify-center rounded-full transition-colors',
-                    camOn ? 'bg-white/20 hover:bg-white/30' : 'bg-red-500 hover:bg-red-600')}
-                >
-                  {camOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-                </button>
-                <Button className="bg-white text-indigo-700 hover:bg-indigo-50" size="sm" onClick={startInstant}>
-                  Start Now
-                </Button>
-              </div>
-            </div>
-          </Card>
-
-          {/* Meetings list */}
-          <Card variant="bordered">
-            <div className="mb-4 flex rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden text-sm w-fit">
-              {(['upcoming', 'past'] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={cn('px-4 py-2 capitalize font-medium transition-colors',
-                    tab === t ? 'bg-brand-600 text-white' : 'text-surface-500 hover:bg-surface-50 dark:hover:bg-surface-800')}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-
-            {loading ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-surface-100 dark:bg-surface-800" />)}
-              </div>
-            ) : meetings.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 py-12 text-center">
-                <Video className="h-10 w-10 text-surface-300" />
-                <p className="text-sm text-surface-500">
-                  {tab === 'upcoming' ? 'No upcoming meetings. Start one now or schedule it.' : 'No past meetings yet. End a meeting to see it here.'}
-                </p>
-                <Button size="sm" onClick={startInstant} leftIcon={<Play className="h-4 w-4" />}>
-                  Start Instant Meeting
-                </Button>
-              </div>
-            ) : (
-              <div className="divide-y divide-surface-100 dark:divide-surface-800">
-                {meetings.map((m) => (
-                  <div key={m.id} className="flex items-center justify-between py-3 gap-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="h-9 w-9 shrink-0 flex items-center justify-center rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600">
-                        <Video className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-surface-900 dark:text-surface-100 text-sm">{m.title}</p>
-                        <div className="flex items-center gap-2 text-xs text-surface-400 mt-0.5">
-                          <Clock className="h-3 w-3" />
-                          {tab === 'upcoming' ? formatDate(m.scheduled_at ?? m.created_at) : formatDate(m.ended_at ?? m.created_at)}
-                          {m.duration_minutes && <span>· {m.duration_minutes} min</span>}
-                          {(m.participants?.length ?? 0) > 0 && (
-                            <><Users className="h-3 w-3 ml-1" />{m.participants.length}</>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {tab === 'upcoming' ? (
-                        <>
-                          <Badge size="sm" variant="outline">{m.status}</Badge>
-                          <Button size="sm" leftIcon={<Play className="h-3.5 w-3.5" />} onClick={() => setActiveMeeting(m)}>
-                            Join
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          {(m.action_items?.length ?? 0) > 0 && (
-                            <span className="flex items-center gap-1 text-xs text-amber-600">
-                              <CheckSquare className="h-3 w-3" />{m.action_items.length} actions
-                            </span>
-                          )}
-                          <Button size="sm" variant="outline" leftIcon={<FileText className="h-3.5 w-3.5" />}>
-                            Recap
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            {[
-              { label: 'Total Meetings', value: meetings.length.toString(), icon: Video, color: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400' },
-              { label: 'Upcoming', value: meetings.filter((m) => m.status === 'scheduled').length.toString(), icon: Calendar, color: 'bg-violet-50 text-violet-600 dark:bg-violet-950 dark:text-violet-400' },
-              { label: 'Action Items', value: meetings.reduce((s, m) => s + (m.action_items?.length ?? 0), 0).toString(), icon: CheckSquare, color: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400' },
-              { label: 'With Recap', value: meetings.filter((m) => m.recap && Object.keys(m.recap).length > 0).length.toString(), icon: FileText, color: 'bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400' },
-            ].map((s) => (
-              <Card key={s.label} variant="bordered" className="flex items-center gap-3">
-                <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', s.color)}>
-                  <s.icon className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-xl font-bold text-surface-900 dark:text-surface-100">{s.value}</p>
-                  <p className="text-xs text-surface-400">{s.label}</p>
-                </div>
-              </Card>
-            ))}
-          </div>
-
+    <div className="flex h-full flex-col overflow-y-auto bg-surface-50 dark:bg-surface-950">
+      {/* Header */}
+      <div className="border-b border-surface-100 bg-white px-6 py-5 dark:border-surface-800 dark:bg-surface-950">
+        <div>
+          <h1 className="text-xl font-semibold text-surface-900 dark:text-surface-100">Video Library</h1>
+          <p className="mt-0.5 text-sm text-surface-500">
+            Upload videos or audio files — they get transcribed and added to your knowledge base so you can chat with them.
+          </p>
         </div>
       </div>
-    </>
+
+      <div className="flex-1 p-6 space-y-6">
+
+        {/* How it works */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {[
+            { step: '1', title: 'Upload', desc: 'Drop any video or audio file (max 100 MB)' },
+            { step: '2', title: 'Transcribe', desc: 'OpenAI Whisper converts speech to text automatically' },
+            { step: '3', title: 'Chat', desc: 'Ask questions about the video content in the chat' },
+          ].map((s) => (
+            <div key={s.step} className="flex items-start gap-3 rounded-xl border border-surface-100 bg-white px-4 py-3 dark:border-surface-800 dark:bg-surface-900">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700 dark:bg-brand-950 dark:text-brand-400">
+                {s.step}
+              </span>
+              <div>
+                <p className="font-medium text-surface-800 dark:text-surface-200 text-sm">{s.title}</p>
+                <p className="text-xs text-surface-500 mt-0.5">{s.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Upload zone */}
+        <UploadZone onUploaded={handleUploaded} />
+
+        {/* Video list */}
+        <Card variant="bordered">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-semibold text-surface-900 dark:text-surface-100">
+              Your Videos
+              {videos.length > 0 && (
+                <span className="ml-2 text-sm font-normal text-surface-400">({videos.length})</span>
+              )}
+            </h2>
+            <button
+              onClick={loadVideos}
+              className="text-xs text-surface-400 hover:text-brand-600 transition-colors"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-14 animate-pulse rounded-lg bg-surface-100 dark:bg-surface-800" />
+              ))}
+            </div>
+          ) : videos.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-12 text-center">
+              <Video className="h-10 w-10 text-surface-300" />
+              <p className="text-sm text-surface-500">
+                No videos yet. Upload one above to get started.
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-surface-100 dark:divide-surface-800">
+              {videos.map((v) => (
+                <VideoCard key={v.id} doc={v} onDelete={handleDelete} onChat={handleChat} />
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Tip */}
+        <div className="flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+          <MessageSquare className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            <strong>Tip:</strong> Once a video is transcribed, you can also ask about it in any chat conversation — just mention the video by name and the AI will find the relevant parts.
+          </span>
+        </div>
+
+      </div>
+    </div>
   );
 }

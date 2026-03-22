@@ -2,7 +2,7 @@ import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse 
 
 import type { ApiError } from '@/types';
 
-const BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8000';
+const BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8010';
 
 let isRefreshing = false;
 let failedQueue: Array<{

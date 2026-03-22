@@ -315,7 +315,7 @@ async def share_conversation(
         conv.updated_at = datetime.now(timezone.utc)
         await db.flush()
 
-    share_url = f"http://localhost:3000/shared/{conv.share_token}"
+    share_url = f"http://localhost:3001/shared/{conv.share_token}"
     return {"shareUrl": share_url}
 
 

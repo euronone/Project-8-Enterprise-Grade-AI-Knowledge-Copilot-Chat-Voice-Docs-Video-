@@ -1,12 +1,15 @@
 import logging
 import math
+import os
 import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.models.knowledge import Collection, Connector, ConnectorStatus, Document, DocumentChunk
 from app.models.user import User
@@ -23,6 +26,10 @@ from app.schemas.knowledge import (
 from app.services import document_service
 
 logger = logging.getLogger(__name__)
+
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mp3", ".wav", ".m4a", ".ogg", ".flac", ".mpeg", ".mpga"}
+WHISPER_SIZE_LIMIT = 25 * 1024 * 1024   # 25 MB — OpenAI Whisper hard limit
+MAX_VIDEO_UPLOAD   = 100 * 1024 * 1024  # 100 MB — user-facing limit
 
 router = APIRouter()
 
@@ -144,6 +151,150 @@ async def upload_documents(
         db=db,
     )
     return [DocumentOut.from_orm(d) for d in documents]
+
+
+# ── Video Upload ──────────────────────────────────────────────────────────────
+
+@router.post("/videos/upload", response_model=DocumentOut)
+async def upload_video(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a video/audio file, transcribe with OpenAI Whisper, and index for RAG chat."""
+    suffix = Path(file.filename or "video.mp4").suffix.lower()
+    if suffix not in VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported format. Supported: mp4, mov, avi, mkv, webm, mp3, wav, m4a, ogg",
+        )
+
+    content = await file.read()
+    file_size = len(content)
+
+    if file_size > MAX_VIDEO_UPLOAD:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"File too large ({file_size // 1024 // 1024} MB). "
+                "Maximum upload size is 100 MB."
+            ),
+        )
+
+    if not (settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip()):
+        raise HTTPException(
+            status_code=400,
+            detail="OpenAI API key not configured. Video transcription requires OpenAI Whisper.",
+        )
+
+    original_name = file.filename or f"video{suffix}"
+
+    # Save file to disk
+    upload_dir = Path(settings.UPLOAD_DIR) / str(current_user.id)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    file_path = upload_dir / f"{uuid.uuid4()}{suffix}"
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    # Create document record (status=processing so the UI shows a spinner)
+    doc = Document(
+        user_id=current_user.id,
+        name=original_name,
+        original_name=original_name,
+        file_path=str(file_path),
+        file_type="video",
+        file_size=file_size,
+        status="processing",
+    )
+    db.add(doc)
+    await db.flush()
+
+    # Transcribe with OpenAI Whisper
+    # For files > 25 MB (Whisper hard limit) we extract a compressed audio track
+    # with ffmpeg first, then send that smaller file to Whisper.
+    audio_tmp_path: Optional[Path] = None
+    try:
+        import subprocess
+        from openai import OpenAI as SyncOpenAI
+        client = SyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+        whisper_input = file_path
+        if file_size > WHISPER_SIZE_LIMIT:
+            # Extract audio as mp3 (typically 1-5 MB for a 100 MB video)
+            audio_tmp_path = upload_dir / f"{file_path.stem}_audio.mp3"
+            ffmpeg_cmd = [
+                "ffmpeg", "-y",
+                "-i", str(file_path),
+                "-vn",           # no video
+                "-q:a", "4",     # ~128 kbps VBR
+                "-map", "a",
+                str(audio_tmp_path),
+            ]
+            proc = subprocess.run(ffmpeg_cmd, capture_output=True, timeout=300)
+            if proc.returncode != 0 or not audio_tmp_path.exists():
+                raise RuntimeError(
+                    f"ffmpeg audio extraction failed: {proc.stderr.decode(errors='replace')[:500]}"
+                )
+            whisper_input = audio_tmp_path
+            logger.info(
+                "Large video '%s' (%d MB): extracted audio to %s (%d KB)",
+                original_name,
+                file_size // 1024 // 1024,
+                audio_tmp_path.name,
+                audio_tmp_path.stat().st_size // 1024,
+            )
+
+        with open(whisper_input, "rb") as audio_file:
+            result = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                response_format="text",
+            )
+
+        transcript_text = str(result).strip()
+        if not transcript_text:
+            transcript_text = f"[No speech detected in '{original_name}']"
+
+        # Chunk transcript and index as DocumentChunks (reuses existing RAG pipeline)
+        from app.services.document_service import _chunk_text
+        raw_chunks = _chunk_text(transcript_text)
+
+        for idx, chunk_text in raw_chunks:
+            db.add(DocumentChunk(
+                document_id=doc.id,
+                content=f"[Video: {original_name}] {chunk_text}",
+                chunk_index=idx,
+                token_count=len(chunk_text.split()),
+            ))
+
+        doc.status = "indexed"
+        doc.word_count = len(transcript_text.split())
+        await db.flush()
+
+        logger.info(
+            "Video '%s' transcribed: %d chars, %d chunks", original_name, len(transcript_text), len(raw_chunks)
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Video transcription failed for '%s': %s", original_name, exc)
+        doc.status = "failed"
+        await db.flush()
+        try:
+            os.remove(str(file_path))
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}")
+    finally:
+        # Clean up temp audio file if one was created
+        if audio_tmp_path and audio_tmp_path.exists():
+            try:
+                os.remove(str(audio_tmp_path))
+            except Exception:
+                pass
+
+    return DocumentOut.from_orm(doc)
 
 
 # ── Collections ───────────────────────────────────────────────────────────────

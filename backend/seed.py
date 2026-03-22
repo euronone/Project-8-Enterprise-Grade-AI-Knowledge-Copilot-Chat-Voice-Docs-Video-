@@ -1,5 +1,5 @@
 """
-Seed script — creates a demo user in the database.
+Seed script — creates demo and admin users in the database.
 
 Usage:
     python seed.py
@@ -27,36 +27,45 @@ async def main():
     await init_db()
 
     async with AsyncSessionLocal() as session:
-        # Check if demo user already exists
+        # ── Demo user ──────────────────────────────────────────────────────
         result = await session.execute(
             select(User).where(User.email == "demo@knowledgeforge.ai")
         )
         existing = result.scalar_one_or_none()
-
         if existing:
             print(f"Demo user already exists: {existing.email} (id={existing.id})")
-            print("Skipping seed.")
-            return
+        else:
+            session.add(User(
+                name="Demo User",
+                email="demo@knowledgeforge.ai",
+                hashed_password=hash_password("demo12345"),
+                role=UserRole.admin,
+                is_active=True,
+            ))
+            await session.flush()
+            print("✓ Demo user created: demo@knowledgeforge.ai / demo12345")
 
-        # Create demo user
-        demo_user = User(
-            name="Demo User",
-            email="demo@knowledgeforge.ai",
-            hashed_password=hash_password("Demo1234!"),
-            role=UserRole.admin,
-            is_active=True,
+        # ── Admin user ─────────────────────────────────────────────────────
+        result2 = await session.execute(
+            select(User).where(User.email == "admin@knowledgeforge.ai")
         )
-        session.add(demo_user)
-        await session.commit()
-        await session.refresh(demo_user)
+        existing_admin = result2.scalar_one_or_none()
+        if existing_admin:
+            print(f"Admin user already exists: {existing_admin.email} (id={existing_admin.id})")
+        else:
+            session.add(User(
+                name="Admin",
+                email="admin@knowledgeforge.ai",
+                hashed_password=hash_password("Admin1234!"),
+                role=UserRole.super_admin,
+                is_active=True,
+            ))
+            await session.flush()
+            print("✓ Admin user created: admin@knowledgeforge.ai / Admin1234!")
 
-        print("\n✓ Demo user created successfully!")
-        print(f"  ID:       {demo_user.id}")
-        print(f"  Name:     {demo_user.name}")
-        print(f"  Email:    {demo_user.email}")
-        print(f"  Password: Demo1234!")
-        print(f"  Role:     {demo_user.role.value}")
-        print("\nYou can now log in at http://localhost:3000 with these credentials.")
+        await session.commit()
+
+    print("\nYou can now log in at http://localhost:3001 with these credentials.")
 
 
 if __name__ == "__main__":

@@ -22,6 +22,45 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     logger.info("Starting KnowledgeForge API...")
     await init_db()
+
+    # ── Auto-seed demo + admin users (idempotent) ──────────────────────────
+    try:
+        from sqlalchemy import text
+        from app.database import AsyncSessionLocal
+        from app.core.security import hash_password
+
+        async with AsyncSessionLocal() as session:
+            r = await session.execute(
+                text("SELECT id FROM users WHERE email='demo@knowledgeforge.ai'")
+            )
+            if r.scalar_one_or_none() is None:
+                await session.execute(text(
+                    "INSERT INTO users (id, email, name, hashed_password, role, is_active, created_at, updated_at) "
+                    "VALUES (gen_random_uuid(), 'demo@knowledgeforge.ai', 'Demo User', :pw, 'admin', true, now(), now())"
+                ), {"pw": hash_password("demo12345")})
+                logger.info("Seed: demo user created.")
+            else:
+                await session.execute(text(
+                    "UPDATE users SET hashed_password=:pw, role='admin' "
+                    "WHERE email='demo@knowledgeforge.ai'"
+                ), {"pw": hash_password("demo12345")})
+                logger.info("Seed: demo user password/role verified.")
+
+            r2 = await session.execute(
+                text("SELECT id FROM users WHERE email='admin@knowledgeforge.ai'")
+            )
+            if r2.scalar_one_or_none() is None:
+                await session.execute(text(
+                    "INSERT INTO users (id, email, name, hashed_password, role, is_active, created_at, updated_at) "
+                    "VALUES (gen_random_uuid(), 'admin@knowledgeforge.ai', 'Admin', :pw, 'super_admin', true, now(), now())"
+                ), {"pw": hash_password("Admin1234!")})
+                logger.info("Seed: admin user created.")
+
+            await session.commit()
+    except Exception as exc:
+        logger.warning(f"Seed step skipped or failed (non-fatal): {exc}")
+    # ── end seed ────────────────────────────────────────────────────────────
+
     logger.info(f"KnowledgeForge API v{settings.APP_VERSION} ready.")
     logger.info(
         f"AI mode: {'Claude (Anthropic)' if settings.has_anthropic_key else 'OpenAI' if (settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip()) else 'Mock (no API key)'}"
