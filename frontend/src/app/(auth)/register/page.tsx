@@ -1,7 +1,8 @@
 'use client';
 
+import { Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -33,8 +34,10 @@ type RegisterFormData = z.infer<typeof registerSchema>;
 const fieldClass =
   'w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white placeholder-white/30 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400';
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const inviteToken = searchParams.get('invite');
 
   const {
     register,
@@ -50,7 +53,7 @@ export default function RegisterPage() {
         name: data.name,
         email: data.email,
         password: data.password,
-      });
+      }, inviteToken ?? undefined);
       toast.success('Account created! Welcome to KnowledgeForge.');
       router.push('/home');
     } catch {
@@ -62,8 +65,17 @@ export default function RegisterPage() {
     <div>
       <div className="mb-8 text-center">
         <h1 className="text-2xl font-bold text-white">Create your account</h1>
-        <p className="mt-2 text-sm text-white/60">Start for free, no credit card required</p>
+        {inviteToken ? (
+          <p className="mt-2 text-sm text-emerald-300">You were invited to join KnowledgeForge</p>
+        ) : (
+          <p className="mt-2 text-sm text-white/60">Start for free, no credit card required</p>
+        )}
       </div>
+      {inviteToken && (
+        <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          Invite link detected — your account will be created with the pre-assigned role.
+        </div>
+      )}
 
       <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
         <div>
@@ -156,5 +168,13 @@ export default function RegisterPage() {
         </Link>
       </p>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterForm />
+    </Suspense>
   );
 }

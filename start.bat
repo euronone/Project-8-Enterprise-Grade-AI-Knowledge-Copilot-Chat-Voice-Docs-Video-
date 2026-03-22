@@ -50,15 +50,15 @@ REM ── Step 3: Start API directly on host (connects to Supabase) ─
 echo.
 echo [3/5] Starting Backend API (native Python)...
 
-netstat -an | findstr ":8000 " | findstr "LISTENING" >nul 2>&1
+netstat -an | findstr ":8010 " | findstr "LISTENING" >nul 2>&1
 if %errorlevel% equ 0 (
-    echo   API already running on port 8000. [SKIP]
+    echo   API already running on port 8010. [SKIP]
 ) else (
     cd /d "%~dp0backend"
-    start "KnowledgeForge API" cmd /k "python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    start "KnowledgeForge API" cmd /k "python -m uvicorn app.main:app --host 0.0.0.0 --port 8010"
     echo   Waiting for API to be ready...
     :waitapi
-    curl -s http://localhost:8000/health >nul 2>&1
+    curl -s http://localhost:8010/health >nul 2>&1
     if %errorlevel% neq 0 (
         timeout /t 3 /nobreak >nul
         goto waitapi
@@ -113,8 +113,8 @@ echo ============================================================
 echo   All services are UP!
 echo.
 echo   Frontend  : http://localhost:3001
-echo   Backend   : http://localhost:8000
-echo   API Docs  : http://localhost:8000/docs
+echo   Backend   : http://localhost:8010
+echo   API Docs  : http://localhost:8010/docs
 echo   Database  : Supabase cloud (always on, zero RAM)
 echo.
 echo   Login     : demo@knowledgeforge.ai / demo12345

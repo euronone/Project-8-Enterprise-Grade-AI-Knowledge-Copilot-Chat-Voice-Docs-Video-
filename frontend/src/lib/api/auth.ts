@@ -16,8 +16,9 @@ export async function login(credentials: LoginCredentials): Promise<AuthResponse
   return data;
 }
 
-export async function register(payload: RegisterPayload): Promise<AuthResponse> {
-  const { data } = await apiClient.post<AuthResponse>('/auth/register', payload);
+export async function register(payload: RegisterPayload, inviteToken?: string): Promise<AuthResponse> {
+  const url = inviteToken ? `/auth/register?invite=${encodeURIComponent(inviteToken)}` : '/auth/register';
+  const { data } = await apiClient.post<AuthResponse>(url, payload);
   localStorage.setItem('accessToken', data.accessToken);
   localStorage.setItem('refreshToken', data.refreshToken);
   return data;

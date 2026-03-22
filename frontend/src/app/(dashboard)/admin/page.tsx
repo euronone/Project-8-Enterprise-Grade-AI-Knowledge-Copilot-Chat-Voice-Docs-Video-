@@ -1,16 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   Activity,
   AlertTriangle,
   CheckCircle2,
   ChevronRight,
+  ClipboardCheck,
+  Copy,
   CreditCard,
   Database,
   Globe,
   Key,
+  Link2,
   Lock,
   MoreHorizontal,
   Plus,
@@ -33,7 +36,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import * as adminApi from '@/lib/api/admin';
-import type { AdminUser, Role } from '@/lib/api/admin';
+import type { AdminUser, InviteLink, Role } from '@/lib/api/admin';
 import { cn } from '@/lib/utils';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -69,6 +72,130 @@ const billing = {
 
 const adminTabs = ['Users', 'Security', 'Billing', 'System'] as const;
 type AdminTab = typeof adminTabs[number];
+
+// ── Invite Link Modal ─────────────────────────────────────────────────────────
+
+function InviteLinkModal({
+  roles,
+  onClose,
+  onCreated,
+}: {
+  roles: Role[];
+  onClose: () => void;
+  onCreated: (link: InviteLink) => void;
+}) {
+  const [form, setForm] = useState({ email: '', role: 'member' });
+  const [loading, setLoading] = useState(false);
+  const [createdLink, setCreatedLink] = useState<InviteLink | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const link = await adminApi.createInviteLink({ email: form.email || undefined, role: form.role });
+      setCreatedLink(link);
+      onCreated(link);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to create invite link';
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopy = () => {
+    if (!createdLink) return;
+    void navigator.clipboard.writeText(createdLink.inviteUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    toast.success('Invite link copied!');
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl dark:bg-surface-900">
+        <div className="flex items-center justify-between border-b border-surface-100 px-6 py-4 dark:border-surface-800">
+          <h2 className="font-semibold text-surface-900 dark:text-surface-100 flex items-center gap-2">
+            <Link2 className="h-4 w-4 text-brand-600" /> Generate Invite Link
+          </h2>
+          <button onClick={onClose} className="text-surface-400 hover:text-surface-600">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {createdLink ? (
+          <div className="p-6 space-y-4">
+            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4">
+              <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300 mb-1">Invite link created!</p>
+              <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                Valid for 7 days · Role: {createdLink.role}
+                {createdLink.email ? ` · For: ${createdLink.email}` : ' · Open to anyone'}
+              </p>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-surface-500 uppercase tracking-wider">Shareable URL</label>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={createdLink.inviteUrl}
+                  className="flex-1 rounded-lg border border-surface-200 bg-surface-50 px-3 py-2 text-sm text-surface-700 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-300"
+                />
+                <button
+                  onClick={handleCopy}
+                  className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 transition-colors"
+                >
+                  {copied ? <ClipboardCheck className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-surface-400">
+              Send this link to your teammate. They'll be taken to the registration page where they can create their account.
+            </p>
+            <Button className="w-full" variant="outline" onClick={onClose}>Done</Button>
+          </div>
+        ) : (
+          <form onSubmit={handleCreate} className="space-y-4 p-6">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-surface-700 dark:text-surface-300">
+                Email Address <span className="text-surface-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="Leave blank to allow anyone to register"
+                className="w-full rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm text-surface-900 placeholder:text-surface-400 focus:border-brand-500 focus:outline-none dark:border-surface-700 dark:bg-surface-800 dark:text-surface-100"
+              />
+              <p className="mt-1 text-xs text-surface-400">If specified, only this email can use the link</p>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-surface-700 dark:text-surface-300">Assign Role</label>
+              <select
+                value={form.role}
+                onChange={(e) => setForm({ ...form, role: e.target.value })}
+                className="w-full rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm text-surface-900 focus:border-brand-500 focus:outline-none dark:border-surface-700 dark:bg-surface-800 dark:text-surface-100"
+              >
+                {roles.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label} — {r.description}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <Button type="button" variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+              <Button type="submit" className="flex-1" disabled={loading}>
+                {loading ? 'Generating...' : 'Generate Link'}
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ── Invite Modal ──────────────────────────────────────────────────────────────
 
@@ -273,28 +400,61 @@ export default function AdminPage() {
   const [tab, setTab] = useState<AdminTab>('Users');
   const [search, setSearch] = useState('');
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [roles, setRoles] = useState<Role[]>([]);
+  const [roles, setRoles] = useState<Role[]>([
+    { value: 'super_admin', label: 'Super Admin', description: 'Full platform access' },
+    { value: 'admin', label: 'Admin', description: 'Organization-level administration' },
+    { value: 'team_admin', label: 'Team Admin', description: 'Manage team members and content' },
+    { value: 'member', label: 'Member', description: 'Standard access to all features' },
+    { value: 'viewer', label: 'Viewer', description: 'Read-only access' },
+    { value: 'guest', label: 'Guest', description: 'Limited guest access' },
+  ]);
   const [stats, setStats] = useState({ totalUsers: 0, activeUsers: 0, pendingUsers: 0, adminUsers: 0 });
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
+  const [showInviteLink, setShowInviteLink] = useState(false);
+  const [inviteLinks, setInviteLinks] = useState<InviteLink[]>([]);
   const [editUser, setEditUser] = useState<AdminUser | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
 
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const [userData, statsData, rolesData] = await Promise.all([
+      const [userData, statsData, rolesData, linksData] = await Promise.all([
         adminApi.listUsers({ search: search || undefined }),
         adminApi.getUserStats(),
         adminApi.listRoles(),
+        adminApi.listInviteLinks().catch(() => [] as InviteLink[]),
       ]);
       setUsers(userData);
       setStats(statsData);
-      setRoles(rolesData);
-    } catch {
-      toast.error('Failed to load users — make sure you have Admin access');
+      if (rolesData.length > 0) setRoles(rolesData);
+      setInviteLinks(linksData);
+    } catch (err: unknown) {
+      const status = (err as { statusCode?: number })?.statusCode;
+      if (status === 401 || status === 403) {
+        toast.error('Access denied — log out and log back in as an Admin user');
+      } else if (!status) {
+        toast.error('Cannot reach backend — make sure the server is running on port 8000');
+      } else {
+        toast.error(`Failed to load users (${status}) — make sure you have Admin access`);
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRevokeLink = async (id: string) => {
+    if (!confirm('Revoke this invite link? It will no longer be usable.')) return;
+    setRevokingId(id);
+    try {
+      await adminApi.revokeInviteLink(id);
+      setInviteLinks((prev) => prev.filter((l) => l.id !== id));
+      toast.success('Invite link revoked');
+    } catch {
+      toast.error('Failed to revoke link');
+    } finally {
+      setRevokingId(null);
     }
   };
 
@@ -303,8 +463,10 @@ export default function AdminPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Debounced search
+  // Debounced search — only re-fetch when search term changes (not on initial mount)
+  const isFirstRender = useRef(true);
   useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
     const t = setTimeout(() => void fetchUsers(), 400);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -336,6 +498,13 @@ export default function AdminPage() {
     <div className="flex h-full flex-col overflow-y-auto bg-surface-50 dark:bg-surface-950">
 
       {/* Modals */}
+      {showInviteLink && (
+        <InviteLinkModal
+          roles={roles}
+          onClose={() => setShowInviteLink(false)}
+          onCreated={(link) => setInviteLinks((prev) => [link, ...prev])}
+        />
+      )}
       {showInvite && (
         <InviteModal
           roles={roles}
@@ -433,9 +602,14 @@ export default function AdminPage() {
                     className="w-full rounded-lg border border-surface-200 bg-surface-50 pl-8 pr-3 py-1.5 text-sm placeholder:text-surface-400 focus:border-brand-500 focus:outline-none dark:border-surface-700 dark:bg-surface-800 dark:text-surface-100"
                   />
                 </div>
-                <Button size="sm" leftIcon={<UserPlus className="h-4 w-4" />} onClick={() => setShowInvite(true)}>
-                  Add User
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" leftIcon={<Link2 className="h-4 w-4" />} onClick={() => setShowInviteLink(true)}>
+                    Invite Link
+                  </Button>
+                  <Button size="sm" leftIcon={<UserPlus className="h-4 w-4" />} onClick={() => setShowInvite(true)}>
+                    Add User
+                  </Button>
+                </div>
               </div>
 
               {loading ? (
@@ -519,6 +693,78 @@ export default function AdminPage() {
                 </div>
               )}
             </Card>
+
+            {/* Active Invite Links */}
+            {inviteLinks.length > 0 && (
+              <Card variant="bordered">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="font-semibold text-surface-900 dark:text-surface-100 flex items-center gap-2">
+                    <Link2 className="h-4 w-4 text-brand-600" /> Active Invite Links
+                    <span className="rounded-full bg-surface-100 dark:bg-surface-800 px-2 py-0.5 text-xs font-medium text-surface-500">
+                      {inviteLinks.length}
+                    </span>
+                  </h2>
+                  <Button size="sm" variant="outline" leftIcon={<Link2 className="h-4 w-4" />} onClick={() => setShowInviteLink(true)}>
+                    New Link
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {inviteLinks.map((link) => (
+                    <div key={link.id} className="flex items-center gap-3 rounded-lg border border-surface-100 dark:border-surface-800 p-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <Badge size="sm" variant={roleColors[link.role] ?? 'default'}>{link.role}</Badge>
+                          {link.email && (
+                            <span className="text-xs text-surface-500 truncate">{link.email}</span>
+                          )}
+                          {!link.email && (
+                            <span className="text-xs text-surface-400 italic">Open invite</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-surface-400 truncate font-mono">{link.inviteUrl}</p>
+                        <p className="text-xs text-surface-300 dark:text-surface-600 mt-0.5">
+                          Expires {new Date(link.expiresAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          title="Copy link"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(link.inviteUrl);
+                            toast.success('Link copied!');
+                          }}
+                          className="rounded-md p-1.5 text-surface-400 hover:bg-surface-100 hover:text-surface-600 dark:hover:bg-surface-800 transition-colors"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </button>
+                        <button
+                          title="Revoke link"
+                          disabled={revokingId === link.id}
+                          onClick={() => handleRevokeLink(link.id)}
+                          className="rounded-md p-1.5 text-surface-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950 transition-colors disabled:opacity-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {/* No invite links placeholder */}
+            {inviteLinks.length === 0 && !loading && (
+              <Card variant="bordered" className="border-dashed">
+                <div className="py-6 text-center">
+                  <Link2 className="mx-auto mb-3 h-8 w-8 text-surface-300" />
+                  <p className="text-sm font-medium text-surface-500">No active invite links</p>
+                  <p className="mt-1 text-xs text-surface-400">Generate a shareable link so teammates can self-register</p>
+                  <Button size="sm" className="mt-3" variant="outline" leftIcon={<Link2 className="h-4 w-4" />} onClick={() => setShowInviteLink(true)}>
+                    Generate Invite Link
+                  </Button>
+                </div>
+              </Card>
+            )}
           </>
         )}
 

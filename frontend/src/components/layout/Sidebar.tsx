@@ -121,7 +121,8 @@ export function Sidebar() {
             })}
           </ul>
 
-          {/* Admin section — role-based */}
+          {/* Admin section — only visible to admin/super_admin */}
+          {(session?.user as { role?: string })?.role === 'Admin' && (
           <div className={cn('mt-4 pt-3 border-t border-surface-100 dark:border-surface-800')}>
             {sidebarOpen && (
               <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-surface-400">
@@ -152,6 +153,7 @@ export function Sidebar() {
               })}
             </ul>
           </div>
+          )}
         </nav>
 
         {/* User section */}

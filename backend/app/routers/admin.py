@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
 from app.dependencies import get_current_user, get_db
-from app.models.user import User, UserRole
+from app.models.user import Invite, User, UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,22 @@ class AdminStatsOut(BaseModel):
     activeUsers: int
     pendingUsers: int
     adminUsers: int
+
+
+class CreateInviteRequest(BaseModel):
+    email: Optional[EmailStr] = None
+    role: str = "member"
+
+
+class InviteOut(BaseModel):
+    id: str
+    token: str
+    email: Optional[str]
+    role: str
+    inviteUrl: str
+    expiresAt: str
+    createdAt: str
+    used: bool
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -262,3 +278,80 @@ async def list_roles(
         {"value": "viewer", "label": "Viewer", "description": "Read-only access"},
         {"value": "guest", "label": "Guest", "description": "Limited guest access"},
     ]
+
+
+# ── Invite Links ───────────────────────────────────────────────────────────────
+
+FRONTEND_BASE_URL = "http://localhost:3001"
+
+
+def _invite_to_out(invite: Invite) -> InviteOut:
+    role_display = {
+        "super_admin": "Super Admin", "admin": "Admin", "team_admin": "Team Admin",
+        "member": "Member", "viewer": "Viewer", "guest": "Guest",
+    }
+    role_val = invite.role.value if hasattr(invite.role, "value") else str(invite.role)
+    return InviteOut(
+        id=str(invite.id),
+        token=invite.token,
+        email=invite.email,
+        role=role_display.get(role_val, "Member"),
+        inviteUrl=f"{FRONTEND_BASE_URL}/register?invite={invite.token}",
+        expiresAt=invite.expires_at.isoformat(),
+        createdAt=invite.created_at.isoformat(),
+        used=invite.used_at is not None,
+    )
+
+
+@router.post("/invites", response_model=InviteOut, status_code=status.HTTP_201_CREATED)
+async def create_invite(
+    body: CreateInviteRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_admin(current_user)
+
+    invite = Invite(
+        email=body.email,
+        role=_parse_role(body.role),
+        created_by_id=current_user.id,
+    )
+    db.add(invite)
+    await db.flush()
+    logger.info(f"Admin {current_user.email} created invite for {body.email or 'anyone'}")
+    return _invite_to_out(invite)
+
+
+@router.get("/invites", response_model=List[InviteOut])
+async def list_invites(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_admin(current_user)
+
+    from datetime import datetime, timezone
+    result = await db.execute(
+        select(Invite)
+        .where(Invite.created_by_id == current_user.id)
+        .where(Invite.expires_at > datetime.now(timezone.utc))
+        .order_by(Invite.created_at.desc())
+    )
+    invites = result.scalars().all()
+    return [_invite_to_out(i) for i in invites]
+
+
+@router.delete("/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_invite(
+    invite_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_admin(current_user)
+
+    result = await db.execute(select(Invite).where(Invite.id == invite_id))
+    invite = result.scalar_one_or_none()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found")
+
+    await db.delete(invite)
+    await db.flush()

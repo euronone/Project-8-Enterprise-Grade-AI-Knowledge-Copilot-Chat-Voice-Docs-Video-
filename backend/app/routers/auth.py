@@ -1,9 +1,11 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, get_current_user
-from app.models.user import User, UserRole
+from app.models.user import Invite, User, UserRole
 from app.schemas.auth import (
     AuthResponse,
     ChangePasswordRequest,
@@ -30,8 +32,39 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    return await auth_service.register_user(body.name, body.email, body.password, db)
+async def register(
+    body: RegisterRequest,
+    invite: Optional[str] = Query(None, alias="invite"),
+    db: AsyncSession = Depends(get_db),
+):
+    from datetime import datetime, timezone
+
+    # Validate invite token if provided
+    invite_record: Optional[Invite] = None
+    if invite:
+        result = await db.execute(select(Invite).where(Invite.token == invite))
+        invite_record = result.scalar_one_or_none()
+        if not invite_record:
+            raise HTTPException(status_code=400, detail="Invalid invite link")
+        if invite_record.used_at is not None:
+            raise HTTPException(status_code=400, detail="This invite link has already been used")
+        if invite_record.expires_at < datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="This invite link has expired")
+
+    auth_response = await auth_service.register_user(body.name, body.email, body.password, db)
+
+    # Mark invite as used
+    if invite_record:
+        from sqlalchemy import select as sa_select
+        from app.models.user import User as UserModel
+        user_result = await db.execute(sa_select(UserModel).where(UserModel.email == body.email))
+        new_user = user_result.scalar_one_or_none()
+        if new_user:
+            invite_record.used_by_id = new_user.id
+            invite_record.used_at = datetime.now(timezone.utc)
+            await db.flush()
+
+    return auth_response
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

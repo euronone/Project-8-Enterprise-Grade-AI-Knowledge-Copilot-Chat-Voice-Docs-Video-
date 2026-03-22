@@ -1,5 +1,6 @@
+import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum as PyEnum
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text
@@ -68,6 +69,40 @@ class User(Base):
     meetings: Mapped[list] = relationship(
         "Meeting", back_populates="user", cascade="all, delete-orphan"
     )
+
+
+class Invite(Base):
+    """Shareable invite tokens for team member onboarding."""
+    __tablename__ = "invites"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    token: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, index=True,
+        default=lambda: secrets.token_urlsafe(32)
+    )
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, name="userrole"), default=UserRole.member, nullable=False
+    )
+    created_by_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    used_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc) + timedelta(days=7)
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    created_by: Mapped["User"] = relationship("User", foreign_keys=[created_by_id])
+    used_by: Mapped["User | None"] = relationship("User", foreign_keys=[used_by_id])
 
 
 class RefreshToken(Base):

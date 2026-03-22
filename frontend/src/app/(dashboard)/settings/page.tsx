@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { useSession } from 'next-auth/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { toast } from 'react-hot-toast';
 import { z } from 'zod';
-import { Camera, CreditCard, Key, Shield, Users } from 'lucide-react';
+import { Camera, CreditCard, ExternalLink, Key, Shield, Users } from 'lucide-react';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
@@ -16,6 +17,8 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Tabs, TabPanel } from '@/components/ui/Tabs';
 import * as authApi from '@/lib/api/auth';
+import * as adminApi from '@/lib/api/admin';
+import type { AdminUser } from '@/lib/api/admin';
 
 const profileSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -46,7 +49,18 @@ const SETTINGS_TABS = [
 
 export default function SettingsPage() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState('profile');
+  const [teamMembers, setTeamMembers] = useState<AdminUser[]>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'team') return;
+    setTeamLoading(true);
+    adminApi.listUsers().then(setTeamMembers).catch(() => {
+      // Non-admins can't list users — silently ignore
+    }).finally(() => setTeamLoading(false));
+  }, [activeTab]);
 
   const profileForm = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -243,37 +257,57 @@ export default function SettingsPage() {
                 <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">
                   Team Members
                 </h3>
-                <Button size="sm">Invite member</Button>
+                <Button
+                  size="sm"
+                  leftIcon={<ExternalLink className="h-4 w-4" />}
+                  onClick={() => router.push('/admin')}
+                >
+                  Manage in Admin
+                </Button>
               </div>
-              <div className="divide-y divide-surface-100 dark:divide-surface-800">
-                {[
-                  { name: 'Jane Smith', email: 'jane@company.com', role: 'Admin', status: 'Active' },
-                  { name: 'Bob Johnson', email: 'bob@company.com', role: 'Member', status: 'Active' },
-                  { name: 'Alice Chen', email: 'alice@company.com', role: 'Viewer', status: 'Pending' },
-                ].map((member) => (
-                  <div key={member.email} className="flex items-center gap-4 py-3">
-                    <Avatar name={member.name} size="sm" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100">
-                        {member.name}
-                      </p>
-                      <p className="text-xs text-surface-500">{member.email}</p>
-                    </div>
-                    <Badge
-                      size="sm"
-                      variant={member.status === 'Active' ? 'success' : 'warning'}
-                    >
-                      {member.status}
-                    </Badge>
-                    <Badge size="sm" variant="default">
-                      {member.role}
-                    </Badge>
-                    <Button size="sm" variant="ghost">
-                      Edit
+              {teamLoading ? (
+                <div className="py-8 text-center text-sm text-surface-400">Loading team...</div>
+              ) : teamMembers.length === 0 ? (
+                <div className="py-8 text-center">
+                  <Users className="mx-auto mb-3 h-8 w-8 text-surface-300" />
+                  <p className="text-sm text-surface-500">
+                    {(session?.user as { role?: string })?.role === 'Admin'
+                      ? 'No team members yet. Invite people from the Admin panel.'
+                      : 'Contact your admin to manage team members.'}
+                  </p>
+                  {(session?.user as { role?: string })?.role === 'Admin' && (
+                    <Button size="sm" className="mt-3" onClick={() => router.push('/admin')}>
+                      Go to Admin Panel
                     </Button>
-                  </div>
-                ))}
-              </div>
+                  )}
+                </div>
+              ) : (
+                <div className="divide-y divide-surface-100 dark:divide-surface-800">
+                  {teamMembers.map((member) => (
+                    <div key={member.id} className="flex items-center gap-4 py-3">
+                      <Avatar name={member.name} size="sm" status={member.status === 'active' ? 'online' : 'offline'} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-surface-900 dark:text-surface-100">
+                          {member.name}
+                          {member.email === session?.user?.email && (
+                            <span className="ml-2 text-xs text-surface-400">(you)</span>
+                          )}
+                        </p>
+                        <p className="text-xs text-surface-500">{member.email}</p>
+                      </div>
+                      <Badge
+                        size="sm"
+                        variant={member.status === 'active' ? 'success' : 'default'}
+                      >
+                        {member.status}
+                      </Badge>
+                      <Badge size="sm" variant="default">
+                        {member.role}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Card>
           </TabPanel>
         </Tabs>
