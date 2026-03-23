@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     # AI APIs
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
+    TAVILY_API_KEY: str = ""
 
     # File uploads
     UPLOAD_DIR: str = "uploads"
@@ -56,6 +57,10 @@ class Settings(BaseSettings):
     @property
     def has_anthropic_key(self) -> bool:
         return bool(self.ANTHROPIC_API_KEY and self.ANTHROPIC_API_KEY.strip())
+
+    @property
+    def has_tavily_key(self) -> bool:
+        return bool(self.TAVILY_API_KEY and self.TAVILY_API_KEY.strip())
 
     @property
     def max_upload_size_bytes(self) -> int:

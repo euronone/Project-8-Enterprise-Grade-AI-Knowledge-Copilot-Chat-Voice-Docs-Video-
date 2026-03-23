@@ -29,6 +29,7 @@ export interface SourceCitation {
   relevanceScore: number;
   url?: string;
   connectorType?: string;
+  sourceType?: 'knowledge_base' | 'web';
 }
 
 export interface MessageFeedback {
@@ -90,6 +91,7 @@ export interface SendMessagePayload {
   model?: AIModel;
   attachmentIds?: string[];
   systemPrompt?: string;
+  images?: string[]; // base64 data URIs for vision (e.g. "data:image/png;base64,...")
 }
 
 export interface StreamingChunk {

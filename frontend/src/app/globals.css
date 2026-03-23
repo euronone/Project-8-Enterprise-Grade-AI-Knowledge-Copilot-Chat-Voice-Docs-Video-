@@ -104,7 +104,25 @@
    ============================================================ */
 @layer components {
   .prose-chat {
-    @apply prose prose-sm dark:prose-invert max-w-none;
+    @apply prose prose-sm max-w-none;
+    color: theme('colors.surface.900');
+  }
+
+  .dark .prose-chat {
+    color: theme('colors.surface.100');
+  }
+
+  .prose-chat p,
+  .prose-chat li,
+  .prose-chat ol,
+  .prose-chat ul,
+  .prose-chat h1,
+  .prose-chat h2,
+  .prose-chat h3,
+  .prose-chat h4,
+  .prose-chat strong,
+  .prose-chat em {
+    color: inherit;
   }
 
   .prose-chat pre {

@@ -216,6 +216,7 @@ async def stream_messages(
                 db=db,
                 user_message_content=body.content,
                 system_prompt=body.systemPrompt,
+                images=body.images,
             ):
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as e:

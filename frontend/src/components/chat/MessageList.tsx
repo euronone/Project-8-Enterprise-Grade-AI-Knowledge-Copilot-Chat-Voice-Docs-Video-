@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
-import { ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Globe, FileText, ThumbsDown, ThumbsUp } from 'lucide-react';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
@@ -52,7 +52,7 @@ export function MessageList({ messages, isLoading }: MessageListProps) {
             Start a conversation
           </h3>
           <p className="mt-1 text-sm text-surface-500">
-            Ask anything — I'll search your knowledge base and answer with citations.
+            Ask anything — I'll search your knowledge base or the web and answer with citations.
           </p>
         </div>
         <div className="flex flex-wrap justify-center gap-2">
@@ -60,6 +60,7 @@ export function MessageList({ messages, isLoading }: MessageListProps) {
             'Summarize last quarter reports',
             'What is our refund policy?',
             'Find onboarding docs',
+            'Latest AI news today',
           ].map((prompt) => (
             <button
               key={prompt}
@@ -112,7 +113,7 @@ function MessageBubble({ message }: { message: Message }) {
           {isUser ? (
             <p className="whitespace-pre-wrap">{message.content}</p>
           ) : (
-            <div className="prose prose-sm dark:prose-invert max-w-none">
+            <div className="prose-chat">
               <ReactMarkdown
                 rehypePlugins={[rehypeHighlight]}
                 remarkPlugins={[remarkGfm]}
@@ -153,23 +154,36 @@ function MessageBubble({ message }: { message: Message }) {
         {/* Sources */}
         {!isUser && message.sources.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-1">
-            {message.sources.slice(0, 3).map((source) => (
-              <a
-                key={source.id}
-                className="inline-flex items-center gap-1.5 rounded-md border border-surface-200 bg-white px-2 py-1 text-xs text-surface-600 hover:bg-surface-50 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-400 dark:hover:bg-surface-800"
-                href={source.url ?? '#'}
-                rel="noopener noreferrer"
-                target="_blank"
-              >
-                <span className="truncate max-w-[120px]">{source.documentName}</span>
-                <Badge size="sm" variant="default">
-                  {Math.round(source.relevanceScore * 100)}%
-                </Badge>
-              </a>
-            ))}
-            {message.sources.length > 3 && (
+            {message.sources.slice(0, 4).map((source) => {
+              const isWeb = source.sourceType === 'web';
+              return (
+                <a
+                  key={source.id}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs hover:opacity-80 transition-opacity',
+                    isWeb
+                      ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                      : 'border-surface-200 bg-white text-surface-600 hover:bg-surface-50 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-400 dark:hover:bg-surface-800'
+                  )}
+                  href={source.url ?? '#'}
+                  rel="noopener noreferrer"
+                  target={source.url ? '_blank' : '_self'}
+                  title={source.chunkText}
+                >
+                  {isWeb
+                    ? <Globe className="h-3 w-3 shrink-0" />
+                    : <FileText className="h-3 w-3 shrink-0" />
+                  }
+                  <span className="truncate max-w-[120px]">{source.documentName}</span>
+                  <Badge size="sm" variant="default">
+                    {Math.round(source.relevanceScore * 100)}%
+                  </Badge>
+                </a>
+              );
+            })}
+            {message.sources.length > 4 && (
               <span className="rounded-md border border-surface-200 px-2 py-1 text-xs text-surface-400 dark:border-surface-700">
-                +{message.sources.length - 3} more
+                +{message.sources.length - 4} more
               </span>
             )}
           </div>

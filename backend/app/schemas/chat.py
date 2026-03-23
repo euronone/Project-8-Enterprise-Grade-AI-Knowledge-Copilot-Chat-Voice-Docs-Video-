@@ -108,6 +108,7 @@ class SendMessageRequest(BaseModel):
     model: Optional[str] = None
     attachmentIds: Optional[List[UUID]] = None
     systemPrompt: Optional[str] = None
+    images: Optional[List[str]] = None  # base64 data URIs for vision
 
 
 class BranchConversationRequest(BaseModel):

@@ -79,6 +79,66 @@ def _detect_topic(message: str) -> str:
     return "default"
 
 
+# Keywords that signal the user wants real-time / current information
+_WEB_SEARCH_KEYWORDS = {
+    "latest", "current", "today", "now", "recent", "news", "trending",
+    "live", "breaking", "update", "yesterday", "this week", "this month",
+    "2025", "2026", "real-time", "just announced", "new release",
+}
+
+
+def _needs_web_search(query: str, kb_sources: list) -> bool:
+    """Return True when the query should trigger a Tavily web search.
+
+    Rules (in priority order):
+    1. If the query contains time-sensitive keywords → always search the web.
+    2. If the knowledge base returned no results → fall back to web search.
+    """
+    query_lower = query.lower()
+    is_time_sensitive = any(kw in query_lower for kw in _WEB_SEARCH_KEYWORDS)
+    return is_time_sensitive or len(kb_sources) == 0
+
+
+async def _tavily_web_search(query: str, max_results: int = 5) -> list:
+    """Call the Tavily Search API and return sources in the same shape as KB sources."""
+    import httpx
+
+    url = "https://api.tavily.com/search"
+    payload = {
+        "api_key": settings.TAVILY_API_KEY,
+        "query": query,
+        "max_results": max_results,
+        "search_depth": "basic",
+        "include_answer": False,
+        "include_raw_content": False,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+    except Exception as e:
+        logger.warning(f"Tavily web search failed: {e}")
+        return []
+
+    sources = []
+    for result in data.get("results", []):
+        sources.append({
+            "id": str(uuid.uuid4()),
+            "documentId": str(uuid.uuid4()),
+            "documentName": result.get("title", "Web Result"),
+            "documentType": "web",
+            "pageNumber": None,
+            "chunkText": result.get("content", "")[:300],
+            "relevanceScore": round(float(result.get("score", 0.7)), 3),
+            "url": result.get("url"),
+            "connectorType": "web_search",
+            "sourceType": "web",
+        })
+    return sources
+
+
 async def _search_relevant_chunks(
     query: str, db: AsyncSession, limit: int = 5
 ) -> list:
@@ -114,6 +174,7 @@ async def _search_relevant_chunks(
                 "relevanceScore": round(0.7 + (0.3 * (1 / (chunk.chunk_index + 1))), 3),
                 "url": None,
                 "connectorType": None,
+                "sourceType": "knowledge_base",
             })
         return sources
     except Exception as e:
@@ -132,6 +193,19 @@ async def _mock_stream(user_message: str) -> AsyncGenerator[str, None]:
         chunk = (" " if i > 0 else "") + word
         yield chunk
         await asyncio.sleep(0.04)
+
+
+def _build_user_content(text: str, images: Optional[List[str]]) -> object:
+    """
+    Return a plain string when there are no images, or a multimodal list when
+    images are present (supported by both OpenAI vision and Claude 3+).
+    """
+    if not images:
+        return text
+    parts: List[dict] = [{"type": "text", "text": text}]
+    for data_uri in images:
+        parts.append({"type": "image_url", "image_url": {"url": data_uri}})
+    return parts
 
 
 async def _claude_stream(
@@ -172,10 +246,19 @@ async def _openai_stream(
         openai_messages.append({"role": "system", "content": system_prompt})
     openai_messages.extend(messages_payload)
 
-    # Map Claude model names to OpenAI equivalents
+    # Map Claude model names to OpenAI equivalents; use gpt-4o for vision
     openai_model = model
     if "claude" in model.lower():
         openai_model = "gpt-4o-mini"
+
+    # If any user message has image_url parts, upgrade to gpt-4o (vision capable)
+    has_images = any(
+        isinstance(m.get("content"), list) and
+        any(p.get("type") == "image_url" for p in m["content"])
+        for m in openai_messages
+    )
+    if has_images and openai_model == "gpt-4o-mini":
+        openai_model = "gpt-4o"
 
     stream = await client.chat.completions.create(
         model=openai_model,
@@ -219,6 +302,7 @@ async def stream_chat_response(
     db: AsyncSession,
     user_message_content: str,
     system_prompt: Optional[str] = None,
+    images: Optional[List[str]] = None,
 ) -> AsyncGenerator[dict, None]:
     """
     Main streaming generator. Yields dicts that will be serialized to SSE frames.
@@ -230,30 +314,56 @@ async def stream_chat_response(
     """
     start_time = time.time()
 
-    # --- 1. Search for relevant document chunks ---
-    sources = await _search_relevant_chunks(user_message_content, db)
+    # --- 1. Search knowledge base ---
+    kb_sources = await _search_relevant_chunks(user_message_content, db)
+
+    # --- 1b. Decide whether to also query the web ---
+    web_sources: list = []
+    used_web_search = False
+    if settings.has_tavily_key and _needs_web_search(user_message_content, kb_sources):
+        logger.info("Web search triggered for query: %s", user_message_content[:80])
+        web_sources = await _tavily_web_search(user_message_content)
+        used_web_search = True
+
+    sources = kb_sources + web_sources
     yield {"type": "sources", "sources": sources}
 
     # --- 2. Build context for the AI ---
     messages_payload = []
-    for msg in messages:
+    for i, msg in enumerate(messages):
         role = msg.role.value if hasattr(msg.role, "value") else msg.role
-        if role in ("user", "assistant"):
-            messages_payload.append({"role": role, "content": msg.content})
+        if role not in ("user", "assistant"):
+            continue
+        # Attach images to the last user message (the one just sent)
+        is_last = i == len(messages) - 1
+        if role == "user" and is_last and images:
+            content = _build_user_content(msg.content, images)
+        else:
+            content = msg.content
+        messages_payload.append({"role": role, "content": content})
 
-    # Build system prompt with RAG context if we have sources
+    # Build system prompt with RAG context from both KB and web sources
     effective_system = system_prompt or (
         "You are KnowledgeForge AI, an intelligent knowledge management assistant. "
         "You help users search, analyze, and extract insights from their document library. "
         "Be concise, accurate, and helpful."
     )
-    if sources:
+    if kb_sources:
         context_text = "\n\n".join(
-            f"[Source: {s['documentName']}]\n{s['chunkText']}" for s in sources
+            f"[Knowledge Base — {s['documentName']}]\n{s['chunkText']}" for s in kb_sources
         )
         effective_system += (
             f"\n\nRelevant context from the knowledge base:\n{context_text}\n\n"
             "Use this context to answer the user's question when relevant. Cite the document names."
+        )
+    if web_sources:
+        web_context = "\n\n".join(
+            f"[Web — {s['documentName']}]({s['url']})\n{s['chunkText']}" for s in web_sources
+        )
+        effective_system += (
+            f"\n\nReal-time web search results:\n{web_context}\n\n"
+            "Use the web results to provide up-to-date information. "
+            "Always mention when information comes from a web source and include the URL."
         )
 
     # --- 3. Stream content ---

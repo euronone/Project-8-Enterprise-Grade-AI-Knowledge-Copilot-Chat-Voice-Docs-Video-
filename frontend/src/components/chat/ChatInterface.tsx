@@ -64,14 +64,36 @@ export function ChatInterface({ conversationId, initialMessage }: ChatInterfaceP
 
   const handleSend = useCallback(
     async (content: string, attachments?: File[]) => {
-      // If files are attached, upload them to the knowledge base first
+      let images: string[] | undefined;
+
       if (attachments && attachments.length > 0) {
-        const uploadToast = toast.loading(`Uploading ${attachments.length} file(s)...`);
-        try {
-          await knowledgeApi.uploadDocuments(attachments, {});
-          toast.success(`${attachments.length} file(s) uploaded to Knowledge base`, { id: uploadToast });
-        } catch {
-          toast.error('File upload failed. Sending message without attachments.', { id: uploadToast });
+        const imageFiles = attachments.filter((f) => f.type.startsWith('image/'));
+        const docFiles   = attachments.filter((f) => !f.type.startsWith('image/'));
+
+        // Convert images to base64 data URIs so the AI can see them (vision)
+        if (imageFiles.length > 0) {
+          images = await Promise.all(
+            imageFiles.map(
+              (file) =>
+                new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onload = () => resolve(reader.result as string);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(file);
+                })
+            )
+          );
+        }
+
+        // Non-image files still go to the knowledge base
+        if (docFiles.length > 0) {
+          const uploadToast = toast.loading(`Uploading ${docFiles.length} file(s)...`);
+          try {
+            await knowledgeApi.uploadDocuments(docFiles, {});
+            toast.success(`${docFiles.length} file(s) added to Knowledge base`, { id: uploadToast });
+          } catch {
+            toast.error('File upload failed. Sending message without attachments.', { id: uploadToast });
+          }
         }
       }
 
@@ -79,6 +101,7 @@ export function ChatInterface({ conversationId, initialMessage }: ChatInterfaceP
         conversationId,
         content,
         model: selectedModel,
+        images,
       });
     },
     [conversationId, selectedModel, sendMessage]

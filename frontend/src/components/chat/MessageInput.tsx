@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   ArrowUp,
+  FileText,
+  ImageIcon,
   Mic,
   Paperclip,
   Square,
@@ -187,6 +189,26 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
     e.target.value = '';
   };
 
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(e.clipboardData.items);
+    const imageItems = items.filter((item) => item.type.startsWith('image/'));
+    if (imageItems.length === 0) return;
+
+    e.preventDefault(); // don't paste raw image data as text
+    const newFiles: File[] = [];
+    imageItems.forEach((item) => {
+      const blob = item.getAsFile();
+      if (!blob) return;
+      // Give the pasted image a meaningful filename with a timestamp
+      const ext = item.type.split('/')[1] ?? 'png';
+      const name = `screenshot-${Date.now()}.${ext}`;
+      newFiles.push(new File([blob], name, { type: item.type }));
+    });
+    if (newFiles.length > 0) {
+      setAttachments((prev) => [...prev, ...newFiles].slice(0, 5));
+    }
+  }, []);
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     noClick: true,
     noKeyboard: true,
@@ -204,23 +226,47 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
       {/* Attachments preview */}
       {attachments.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-2">
-          {attachments.map((file, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-1.5 rounded-md border border-surface-200 bg-surface-50 px-2 py-1 text-xs dark:border-surface-700 dark:bg-surface-800"
-            >
-              <span className="max-w-[120px] truncate text-surface-700 dark:text-surface-300">
-                {file.name}
-              </span>
-              <button
-                className="text-surface-400 hover:text-surface-600"
-                type="button"
-                onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+          {attachments.map((file, i) => {
+            const isImage = file.type.startsWith('image/');
+            const objectUrl = isImage ? URL.createObjectURL(file) : null;
+            return (
+              <div
+                key={i}
+                className="group relative flex items-center gap-1.5 rounded-md border border-surface-200 bg-surface-50 dark:border-surface-700 dark:bg-surface-800 overflow-hidden"
               >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ))}
+                {isImage && objectUrl ? (
+                  // Image thumbnail
+                  <div className="flex items-center gap-1.5 px-1.5 py-1">
+                    <img
+                      src={objectUrl}
+                      alt={file.name}
+                      className="h-10 w-10 rounded object-cover"
+                      onLoad={() => URL.revokeObjectURL(objectUrl)}
+                    />
+                    <span className="max-w-[100px] truncate text-xs text-surface-600 dark:text-surface-400">
+                      {file.name}
+                    </span>
+                  </div>
+                ) : (
+                  // Generic file chip
+                  <div className="flex items-center gap-1.5 px-2 py-1.5">
+                    <FileText className="h-3.5 w-3.5 shrink-0 text-surface-400" />
+                    <span className="max-w-[120px] truncate text-xs text-surface-700 dark:text-surface-300">
+                      {file.name}
+                    </span>
+                  </div>
+                )}
+                <button
+                  className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-surface-200 text-surface-600 opacity-0 transition-opacity group-hover:opacity-100 dark:bg-surface-700 dark:text-surface-300"
+                  type="button"
+                  title="Remove"
+                  onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -307,12 +353,13 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
             disabled={disabled}
             placeholder={
               placeholder ??
-              (isDragActive ? 'Drop files here...' : 'Ask anything... (Shift+Enter for new line)')
+              (isDragActive ? 'Drop files here...' : 'Ask anything… (Shift+Enter for new line, paste images with Ctrl+V)')
             }
             rows={1}
             value={value}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
           />
 
           {/* Send / Stop */}

@@ -80,6 +80,7 @@ export async function sendMessage(
         model: payload.model,
         attachmentIds: payload.attachmentIds,
         systemPrompt: payload.systemPrompt,
+        images: payload.images,
       }),
     }
   );
