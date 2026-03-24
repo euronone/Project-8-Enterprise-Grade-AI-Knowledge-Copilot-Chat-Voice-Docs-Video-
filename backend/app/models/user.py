@@ -69,6 +69,9 @@ class User(Base):
     meetings: Mapped[list] = relationship(
         "Meeting", back_populates="user", cascade="all, delete-orphan"
     )
+    api_keys: Mapped[list] = relationship(
+        "ApiKey", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class Invite(Base):
