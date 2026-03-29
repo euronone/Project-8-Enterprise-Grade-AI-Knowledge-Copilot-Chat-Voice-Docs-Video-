@@ -1,50 +1,10 @@
 
-> knowledgeforge-frontend@0.1.0 dev
-> next dev --turbo
+> knowledgeforge-frontend@0.1.0 start
+> next start --port 3001
 
-  ▲ Next.js 14.2.29 (turbo)
-  - Local:        http://localhost:3000
-  - Environments: .env.local
+  ▲ Next.js 14.2.29
+  - Local:        http://localhost:3001
 
  ✓ Starting...
- ✓ Ready in 22.6s
- ○ Compiling /chat ...
- GET / 307 in 47968ms
- ✓ Compiled /chat in 56.8s
- GET /home 200 in 8243ms
- ○ Compiling /api/auth/[...nextauth] ...
- ✓ Compiled /api/auth/[...nextauth] in 6.7s
-[next-auth][warn][DEBUG_ENABLED] 
-https://next-auth.js.org/warnings#debug_enabled
- GET /api/auth/session 200 in 9730ms
- GET /api/auth/session 200 in 781ms
- ○ Compiling /chat/[id] ...
- ✓ Compiled /chat/[id] in 7.6s
- GET /chat/0583c37b-a1b2-45b3-9dd5-1a725e76707b?q=tell%20me%20recent%20conflict%20between%20Iran%20and%20Israel%2C%20started%20in%20mArch%202026 200 in 1361ms
- GET /api/auth/session 200 in 208ms
- GET /api/auth/session 200 in 177ms
- ○ Compiling /video ...
- ✓ Compiled /video in 4.5s
- ○ Compiling /settings ...
- ✓ Compiled /settings in 93.5s
- ✓ Compiled in 141.7s
- ○ Compiling /settings ...
- ✓ Compiled /settings in 9.8s
- GET /settings 200 in 14596ms
- GET /api/auth/session 200 in 2247ms
- GET /api/auth/session 200 in 678ms
- ○ Compiling /home ...
- ✓ Compiled /home in 2.5s
- GET /api/auth/session 200 in 508ms
- GET /api/auth/session 200 in 447ms
- GET /api/auth/session 200 in 412ms
- GET /api/auth/session 200 in 605ms
- GET /api/auth/session 200 in 865ms
- ○ Compiling / ...
- ✓ Compiled / in 14.6s
- GET / 307 in 22156ms
- GET / 307 in 1677ms
- ○ Compiling /_not-found/page ...
- GET / 307 in 3152ms
- ✓ Compiled /_not-found/page in 158s
- GET /app 404 in 164030ms
+ ⚠ "next start" does not work with "output: standalone" configuration. Use "node .next/standalone/server.js" instead.
+ ✓ Ready in 698ms
