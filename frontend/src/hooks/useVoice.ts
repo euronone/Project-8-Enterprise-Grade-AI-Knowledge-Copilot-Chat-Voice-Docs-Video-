@@ -12,6 +12,15 @@ export function useMediaDevices() {
 
   const requestPermission = useCallback(async () => {
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setError(
+          window.isSecureContext === false
+            ? 'Microphone access requires HTTPS. Please use the secure URL provided by your administrator.'
+            : 'Your browser does not support microphone access.'
+        );
+        setHasPermission(false);
+        return;
+      }
       await navigator.mediaDevices.getUserMedia({ audio: true });
       setHasPermission(true);
       const mediaDevices = await navigator.mediaDevices.enumerateDevices();
@@ -47,6 +56,11 @@ export function useAudioRecorder() {
 
   const startRecording = useCallback(async () => {
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setStatus('error');
+        console.error('Microphone requires HTTPS. Use the CloudFront HTTPS URL.');
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioCtx = new AudioContext();
       const source = audioCtx.createMediaStreamSource(stream);

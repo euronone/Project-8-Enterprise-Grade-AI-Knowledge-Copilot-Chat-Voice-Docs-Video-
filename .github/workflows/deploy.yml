@@ -1,0 +1,190 @@
+name: Deploy to AWS ECS Fargate
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:      # Allow manual trigger from GitHub UI
+
+env:
+  AWS_REGION: us-east-1
+  PROJECT_NAME: knowledgeforge
+
+jobs:
+  # ── Build & Push Backend ─────────────────────────────────────────────────────
+  build-backend:
+    name: Build & Push Backend
+    runs-on: ubuntu-latest
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+      ecr_url:   ${{ steps.ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        id: meta
+        run: echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push backend image
+        run: |
+          ECR_REPO="${{ steps.ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-backend"
+          TAG="${{ steps.meta.outputs.tag }}"
+
+          docker build \
+            --platform linux/amd64 \
+            -t "${ECR_REPO}:${TAG}" \
+            -t "${ECR_REPO}:latest" \
+            ./backend
+
+          docker push "${ECR_REPO}:${TAG}"
+          docker push "${ECR_REPO}:latest"
+
+  # ── Get ALB DNS for Frontend Build ──────────────────────────────────────────
+  get-infra-outputs:
+    name: Get Infrastructure Outputs
+    runs-on: ubuntu-latest
+
+    outputs:
+      alb_dns:       ${{ steps.tf_outputs.outputs.alb_dns }}
+      backend_url:   ${{ steps.tf_outputs.outputs.backend_url }}
+      frontend_url:  ${{ steps.tf_outputs.outputs.frontend_url }}
+      ecr_frontend:  ${{ steps.tf_outputs.outputs.ecr_frontend }}
+      ecr_backend:   ${{ steps.tf_outputs.outputs.ecr_backend }}
+      ecs_cluster:   ${{ steps.tf_outputs.outputs.ecs_cluster }}
+      backend_svc:   ${{ steps.tf_outputs.outputs.backend_svc }}
+      frontend_svc:  ${{ steps.tf_outputs.outputs.frontend_svc }}
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      # Read ALB DNS from AWS directly (no need for Terraform in CI)
+      - name: Get ALB DNS from AWS
+        id: tf_outputs
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names "${{ env.PROJECT_NAME }}-alb" \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text --region ${{ env.AWS_REGION }})
+
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+
+          echo "alb_dns=${ALB_DNS}"              >> "$GITHUB_OUTPUT"
+          echo "backend_url=http://${ALB_DNS}:8000" >> "$GITHUB_OUTPUT"
+          echo "frontend_url=http://${ALB_DNS}"     >> "$GITHUB_OUTPUT"
+          echo "ecr_frontend=${ECR_BASE}/${{ env.PROJECT_NAME }}-frontend" >> "$GITHUB_OUTPUT"
+          echo "ecr_backend=${ECR_BASE}/${{ env.PROJECT_NAME }}-backend"   >> "$GITHUB_OUTPUT"
+          echo "ecs_cluster=${{ env.PROJECT_NAME }}-cluster"               >> "$GITHUB_OUTPUT"
+          echo "backend_svc=${{ env.PROJECT_NAME }}-backend-svc"           >> "$GITHUB_OUTPUT"
+          echo "frontend_svc=${{ env.PROJECT_NAME }}-frontend-svc"         >> "$GITHUB_OUTPUT"
+
+  # ── Build & Push Frontend ────────────────────────────────────────────────────
+  build-frontend:
+    name: Build & Push Frontend
+    runs-on: ubuntu-latest
+    needs: [get-infra-outputs]
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        id: meta
+        run: echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push frontend image
+        run: |
+          ECR_REPO="${{ needs.get-infra-outputs.outputs.ecr_frontend }}"
+          TAG="${{ steps.meta.outputs.tag }}"
+
+          # NEXT_PUBLIC_* vars must be baked in at build time
+          docker build \
+            --platform linux/amd64 \
+            --build-arg NEXT_PUBLIC_API_URL="${{ needs.get-infra-outputs.outputs.backend_url }}" \
+            --build-arg NEXT_PUBLIC_WS_URL="ws://${{ needs.get-infra-outputs.outputs.alb_dns }}:8000" \
+            --build-arg NEXT_PUBLIC_APP_URL="${{ needs.get-infra-outputs.outputs.frontend_url }}" \
+            -t "${ECR_REPO}:${TAG}" \
+            -t "${ECR_REPO}:latest" \
+            ./frontend
+
+          docker push "${ECR_REPO}:${TAG}"
+          docker push "${ECR_REPO}:latest"
+
+  # ── Deploy to ECS ────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend, get-infra-outputs]
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Force new backend deployment
+        run: |
+          aws ecs update-service \
+            --cluster "${{ needs.get-infra-outputs.outputs.ecs_cluster }}" \
+            --service "${{ needs.get-infra-outputs.outputs.backend_svc }}" \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }} \
+            --output text --query 'service.serviceArn'
+
+      - name: Force new frontend deployment
+        run: |
+          aws ecs update-service \
+            --cluster "${{ needs.get-infra-outputs.outputs.ecs_cluster }}" \
+            --service "${{ needs.get-infra-outputs.outputs.frontend_svc }}" \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }} \
+            --output text --query 'service.serviceArn'
+
+      - name: Wait for services to stabilize
+        run: |
+          echo "Waiting for ECS services to stabilize..."
+          aws ecs wait services-stable \
+            --cluster "${{ needs.get-infra-outputs.outputs.ecs_cluster }}" \
+            --services \
+              "${{ needs.get-infra-outputs.outputs.backend_svc }}" \
+              "${{ needs.get-infra-outputs.outputs.frontend_svc }}" \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Print app URL
+        run: |
+          echo "✅ Deployment successful!"
+          echo "🌐 App URL: ${{ needs.get-infra-outputs.outputs.frontend_url }}"
+          echo "🔌 API URL: ${{ needs.get-infra-outputs.outputs.backend_url }}"
