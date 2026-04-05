@@ -278,13 +278,8 @@ jobs:
                     "awslogs-stream-prefix": "ecs",
                   }
                 },
-                "healthCheck": {
-                  "command":     ["CMD-SHELL", "wget -qO- http://localhost:3000 > /dev/null || exit 1"],
-                  "interval":    30,
-                  "timeout":     15,
-                  "retries":     3,
-                  "startPeriod": 60,
-                },
+                # No container healthCheck — ALB target group handles it
+                # (ALB is configured to accept 200-399, covering the 307 redirect from Next.js)
               }
             ],
           }
