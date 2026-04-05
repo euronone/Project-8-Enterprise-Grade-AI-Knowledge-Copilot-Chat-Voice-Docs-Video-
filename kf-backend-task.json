@@ -1,0 +1,102 @@
+{
+  "family": "knowledgeforge-backend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::993750298110:role/knowledgeforge-ecs-execution-role",
+  "containerDefinitions": [
+    {
+      "name": "backend",
+      "image": "993750298110.dkr.ecr.us-east-1.amazonaws.com/knowledgeforge-backend:latest",
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "DATABASE_URL",
+          "value": ""
+        },
+        {
+          "name": "DATABASE_SSL",
+          "value": "true"
+        },
+        {
+          "name": "REDIS_URL",
+          "value": "redis://localhost:6379"
+        },
+        {
+          "name": "SECRET_KEY",
+          "value": "change-me"
+        },
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "value": ""
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "value": ""
+        },
+        {
+          "name": "TAVILY_API_KEY",
+          "value": ""
+        },
+        {
+          "name": "CORS_ORIGINS",
+          "value": "[\"http://\",\"http://:8000\",\"http://localhost:3001\"]"
+        },
+        {
+          "name": "DEBUG",
+          "value": "false"
+        },
+        {
+          "name": "UPLOAD_DIR",
+          "value": "uploads"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/knowledgeforge-backend",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -sf http://localhost:8000/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3,
+        "startPeriod": 40
+      }
+    },
+    {
+      "name": "redis",
+      "image": "redis:7-alpine",
+      "essential": false,
+      "portMappings": [
+        {
+          "containerPort": 6379,
+          "protocol": "tcp"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/knowledgeforge-backend",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "redis"
+        }
+      }
+    }
+  ]
+}

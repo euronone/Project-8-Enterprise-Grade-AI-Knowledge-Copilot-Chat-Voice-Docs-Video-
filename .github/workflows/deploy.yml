@@ -1,27 +1,59 @@
-name: Deploy to AWS ECS Fargate
+name: Deploy to AWS ECS
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:      # Allow manual trigger from GitHub UI
+    branches:
+      - main
+      - feature/development
+  workflow_dispatch:   # Allow manual trigger from GitHub UI
 
 env:
-  AWS_REGION: us-east-1
-  PROJECT_NAME: knowledgeforge
+  AWS_REGION:  us-east-1
+  ACCOUNT_ID:  "993750298110"
+  PROJECT:     knowledgeforge
 
+# ─────────────────────────────────────────────────────────────
+# Job 1 — Get shared values (image tag + ALB DNS)
+# ─────────────────────────────────────────────────────────────
 jobs:
-  # ── Build & Push Backend ─────────────────────────────────────────────────────
-  build-backend:
-    name: Build & Push Backend
+  setup:
+    name: Setup (tag + ALB DNS)
     runs-on: ubuntu-latest
-
     outputs:
-      image_tag: ${{ steps.meta.outputs.tag }}
-      ecr_url:   ${{ steps.ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-backend
+      tag:     ${{ steps.vars.outputs.tag }}
+      alb_dns: ${{ steps.vars.outputs.alb_dns }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Get image tag and ALB DNS
+        id: vars
+        run: |
+          TAG="${GITHUB_SHA::8}"
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names "${{ env.PROJECT }}-alb" \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text --region "${{ env.AWS_REGION }}")
+          echo "tag=$TAG"       >> "$GITHUB_OUTPUT"
+          echo "alb_dns=$ALB_DNS" >> "$GITHUB_OUTPUT"
+          echo "Image tag  : $TAG"
+          echo "ALB DNS    : $ALB_DNS"
+
+# ─────────────────────────────────────────────────────────────
+# Job 2a — Build & push backend (parallel with 2b)
+# ─────────────────────────────────────────────────────────────
+  build-backend:
+    name: Build Backend Image
+    runs-on: ubuntu-latest
+    needs: setup
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -30,84 +62,36 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: ecr
+      - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Set image tag
-        id: meta
-        run: echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push backend image
+      - name: Build & push backend
         run: |
-          ECR_REPO="${{ steps.ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-backend"
-          TAG="${{ steps.meta.outputs.tag }}"
+          ECR="${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.PROJECT }}-backend"
+          TAG="${{ needs.setup.outputs.tag }}"
 
           docker build \
             --platform linux/amd64 \
-            -t "${ECR_REPO}:${TAG}" \
-            -t "${ECR_REPO}:latest" \
+            --cache-from "${ECR}:latest" \
+            -t "${ECR}:${TAG}" \
+            -t "${ECR}:latest" \
             ./backend
 
-          docker push "${ECR_REPO}:${TAG}"
-          docker push "${ECR_REPO}:latest"
+          docker push "${ECR}:${TAG}"
+          docker push "${ECR}:latest"
+          echo "✓ Backend pushed → ${ECR}:${TAG}"
 
-  # ── Get ALB DNS for Frontend Build ──────────────────────────────────────────
-  get-infra-outputs:
-    name: Get Infrastructure Outputs
-    runs-on: ubuntu-latest
-
-    outputs:
-      alb_dns:       ${{ steps.tf_outputs.outputs.alb_dns }}
-      backend_url:   ${{ steps.tf_outputs.outputs.backend_url }}
-      frontend_url:  ${{ steps.tf_outputs.outputs.frontend_url }}
-      ecr_frontend:  ${{ steps.tf_outputs.outputs.ecr_frontend }}
-      ecr_backend:   ${{ steps.tf_outputs.outputs.ecr_backend }}
-      ecs_cluster:   ${{ steps.tf_outputs.outputs.ecs_cluster }}
-      backend_svc:   ${{ steps.tf_outputs.outputs.backend_svc }}
-      frontend_svc:  ${{ steps.tf_outputs.outputs.frontend_svc }}
-
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
-
-      # Read ALB DNS from AWS directly (no need for Terraform in CI)
-      - name: Get ALB DNS from AWS
-        id: tf_outputs
-        run: |
-          ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --names "${{ env.PROJECT_NAME }}-alb" \
-            --query 'LoadBalancers[0].DNSName' \
-            --output text --region ${{ env.AWS_REGION }})
-
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-
-          echo "alb_dns=${ALB_DNS}"              >> "$GITHUB_OUTPUT"
-          echo "backend_url=http://${ALB_DNS}:8000" >> "$GITHUB_OUTPUT"
-          echo "frontend_url=http://${ALB_DNS}"     >> "$GITHUB_OUTPUT"
-          echo "ecr_frontend=${ECR_BASE}/${{ env.PROJECT_NAME }}-frontend" >> "$GITHUB_OUTPUT"
-          echo "ecr_backend=${ECR_BASE}/${{ env.PROJECT_NAME }}-backend"   >> "$GITHUB_OUTPUT"
-          echo "ecs_cluster=${{ env.PROJECT_NAME }}-cluster"               >> "$GITHUB_OUTPUT"
-          echo "backend_svc=${{ env.PROJECT_NAME }}-backend-svc"           >> "$GITHUB_OUTPUT"
-          echo "frontend_svc=${{ env.PROJECT_NAME }}-frontend-svc"         >> "$GITHUB_OUTPUT"
-
-  # ── Build & Push Frontend ────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# Job 2b — Build & push frontend (parallel with 2a)
+#   NEXT_PUBLIC_* vars are baked in at build time
+# ─────────────────────────────────────────────────────────────
   build-frontend:
-    name: Build & Push Frontend
+    name: Build Frontend Image
     runs-on: ubuntu-latest
-    needs: [get-infra-outputs]
-
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tag }}
+    needs: setup
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -116,36 +100,36 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
+      - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Set image tag
-        id: meta
-        run: echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push frontend image
+      - name: Build & push frontend
         run: |
-          ECR_REPO="${{ needs.get-infra-outputs.outputs.ecr_frontend }}"
-          TAG="${{ steps.meta.outputs.tag }}"
+          ECR="${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.PROJECT }}-frontend"
+          TAG="${{ needs.setup.outputs.tag }}"
+          ALB="${{ needs.setup.outputs.alb_dns }}"
 
-          # NEXT_PUBLIC_* vars must be baked in at build time
           docker build \
             --platform linux/amd64 \
-            --build-arg NEXT_PUBLIC_API_URL="${{ needs.get-infra-outputs.outputs.backend_url }}" \
-            --build-arg NEXT_PUBLIC_WS_URL="ws://${{ needs.get-infra-outputs.outputs.alb_dns }}:8000" \
-            --build-arg NEXT_PUBLIC_APP_URL="${{ needs.get-infra-outputs.outputs.frontend_url }}" \
-            -t "${ECR_REPO}:${TAG}" \
-            -t "${ECR_REPO}:latest" \
+            --cache-from "${ECR}:latest" \
+            --build-arg NEXT_PUBLIC_API_URL="http://${ALB}:8000" \
+            --build-arg NEXT_PUBLIC_WS_URL="ws://${ALB}:8000" \
+            --build-arg NEXT_PUBLIC_APP_URL="http://${ALB}" \
+            -t "${ECR}:${TAG}" \
+            -t "${ECR}:latest" \
             ./frontend
 
-          docker push "${ECR_REPO}:${TAG}"
-          docker push "${ECR_REPO}:latest"
+          docker push "${ECR}:${TAG}"
+          docker push "${ECR}:latest"
+          echo "✓ Frontend pushed → ${ECR}:${TAG}"
 
-  # ── Deploy to ECS ────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# Job 3 — Register new task defs and deploy to ECS
+# ─────────────────────────────────────────────────────────────
   deploy:
     name: Deploy to ECS
     runs-on: ubuntu-latest
-    needs: [build-backend, build-frontend, get-infra-outputs]
+    needs: [setup, build-backend, build-frontend]
 
     steps:
       - name: Configure AWS credentials
@@ -155,36 +139,207 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      - name: Force new backend deployment
+      # ── Register backend task definition ──────────────────
+      - name: Register backend task definition
+        id: backend_task
+        env:
+          TAG:             ${{ needs.setup.outputs.tag }}
+          ALB_DNS:         ${{ needs.setup.outputs.alb_dns }}
+          DATABASE_URL:    ${{ secrets.DATABASE_URL }}
+          SECRET_KEY:      ${{ secrets.SECRET_KEY }}
+          ANTHROPIC_KEY:   ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_KEY:      ${{ secrets.OPENAI_API_KEY }}
+          TAVILY_KEY:      ${{ secrets.TAVILY_API_KEY }}
+        run: |
+          ECR_BASE="${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          EXEC_ROLE="arn:aws:iam::${{ env.ACCOUNT_ID }}:role/${{ env.PROJECT }}-ecs-execution-role"
+
+          # Use Python to build JSON safely (handles special chars in secrets)
+          python3 - <<'PYEOF' > /tmp/backend-task.json
+          import json, os
+
+          ACCOUNT  = "${{ env.ACCOUNT_ID }}"
+          REGION   = "${{ env.AWS_REGION }}"
+          PROJECT  = "${{ env.PROJECT }}"
+          ECR_BASE = f"{ACCOUNT}.dkr.ecr.{REGION}.amazonaws.com"
+          ALB      = os.environ["ALB_DNS"]
+          TAG      = os.environ["TAG"]
+
+          task = {
+            "family": f"{PROJECT}-backend",
+            "networkMode": "awsvpc",
+            "requiresCompatibilities": ["FARGATE"],
+            "cpu": "512",
+            "memory": "1024",
+            "executionRoleArn": f"arn:aws:iam::{ACCOUNT}:role/{PROJECT}-ecs-execution-role",
+            "containerDefinitions": [
+              {
+                "name": "backend",
+                "image": f"{ECR_BASE}/{PROJECT}-backend:{TAG}",
+                "portMappings": [{"containerPort": 8000, "protocol": "tcp"}],
+                "essential": True,
+                "environment": [
+                  {"name": "DATABASE_URL",      "value": os.environ.get("DATABASE_URL", "")},
+                  {"name": "DATABASE_SSL",       "value": "true"},
+                  {"name": "REDIS_URL",          "value": "redis://localhost:6379"},
+                  {"name": "SECRET_KEY",         "value": os.environ.get("SECRET_KEY", "")},
+                  {"name": "ANTHROPIC_API_KEY",  "value": os.environ.get("ANTHROPIC_KEY", "")},
+                  {"name": "OPENAI_API_KEY",     "value": os.environ.get("OPENAI_KEY", "")},
+                  {"name": "TAVILY_API_KEY",     "value": os.environ.get("TAVILY_KEY", "")},
+                  {"name": "CORS_ORIGINS",       "value": f'["http://{ALB}","http://{ALB}:8000","http://localhost:3001"]'},
+                  {"name": "DEBUG",              "value": "false"},
+                  {"name": "UPLOAD_DIR",         "value": "uploads"},
+                ],
+                "logConfiguration": {
+                  "logDriver": "awslogs",
+                  "options": {
+                    "awslogs-group":         f"/ecs/{PROJECT}-backend",
+                    "awslogs-region":        REGION,
+                    "awslogs-stream-prefix": "ecs",
+                  }
+                },
+                "healthCheck": {
+                  "command":     ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"],
+                  "interval":    30,
+                  "timeout":     10,
+                  "retries":     3,
+                  "startPeriod": 40,
+                },
+              },
+              {
+                "name": "redis",
+                "image": "redis:7-alpine",
+                "essential": False,
+                "portMappings": [{"containerPort": 6379, "protocol": "tcp"}],
+                "logConfiguration": {
+                  "logDriver": "awslogs",
+                  "options": {
+                    "awslogs-group":         f"/ecs/{PROJECT}-backend",
+                    "awslogs-region":        REGION,
+                    "awslogs-stream-prefix": "redis",
+                  }
+                },
+              },
+            ],
+          }
+          print(json.dumps(task))
+          PYEOF
+
+          TASK_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/backend-task.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text --region "${{ env.AWS_REGION }}")
+          echo "arn=$TASK_ARN" >> "$GITHUB_OUTPUT"
+          echo "✓ Backend task: $TASK_ARN"
+
+      # ── Register frontend task definition ─────────────────
+      - name: Register frontend task definition
+        id: frontend_task
+        env:
+          TAG:            ${{ needs.setup.outputs.tag }}
+          ALB_DNS:        ${{ needs.setup.outputs.alb_dns }}
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+        run: |
+          python3 - <<'PYEOF' > /tmp/frontend-task.json
+          import json, os
+
+          ACCOUNT  = "${{ env.ACCOUNT_ID }}"
+          REGION   = "${{ env.AWS_REGION }}"
+          PROJECT  = "${{ env.PROJECT }}"
+          ECR_BASE = f"{ACCOUNT}.dkr.ecr.{REGION}.amazonaws.com"
+          ALB      = os.environ["ALB_DNS"]
+          TAG      = os.environ["TAG"]
+
+          task = {
+            "family": f"{PROJECT}-frontend",
+            "networkMode": "awsvpc",
+            "requiresCompatibilities": ["FARGATE"],
+            "cpu": "256",
+            "memory": "512",
+            "executionRoleArn": f"arn:aws:iam::{ACCOUNT}:role/{PROJECT}-ecs-execution-role",
+            "containerDefinitions": [
+              {
+                "name": "frontend",
+                "image": f"{ECR_BASE}/{PROJECT}-frontend:{TAG}",
+                "portMappings": [{"containerPort": 3000, "protocol": "tcp"}],
+                "essential": True,
+                "environment": [
+                  {"name": "NEXT_PUBLIC_API_URL", "value": f"http://{ALB}:8000"},
+                  {"name": "NEXT_PUBLIC_WS_URL",  "value": f"ws://{ALB}:8000"},
+                  {"name": "NEXT_PUBLIC_APP_URL", "value": f"http://{ALB}"},
+                  {"name": "NEXTAUTH_URL",         "value": f"http://{ALB}"},
+                  {"name": "NEXTAUTH_SECRET",      "value": os.environ.get("NEXTAUTH_SECRET", "")},
+                ],
+                "logConfiguration": {
+                  "logDriver": "awslogs",
+                  "options": {
+                    "awslogs-group":         f"/ecs/{PROJECT}-frontend",
+                    "awslogs-region":        REGION,
+                    "awslogs-stream-prefix": "ecs",
+                  }
+                },
+                "healthCheck": {
+                  "command":     ["CMD-SHELL", "wget -qO- http://localhost:3000 > /dev/null || exit 1"],
+                  "interval":    30,
+                  "timeout":     15,
+                  "retries":     3,
+                  "startPeriod": 60,
+                },
+              }
+            ],
+          }
+          print(json.dumps(task))
+          PYEOF
+
+          TASK_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/frontend-task.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text --region "${{ env.AWS_REGION }}")
+          echo "arn=$TASK_ARN" >> "$GITHUB_OUTPUT"
+          echo "✓ Frontend task: $TASK_ARN"
+
+      # ── Update ECS services ───────────────────────────────
+      - name: Update backend ECS service
         run: |
           aws ecs update-service \
-            --cluster "${{ needs.get-infra-outputs.outputs.ecs_cluster }}" \
-            --service "${{ needs.get-infra-outputs.outputs.backend_svc }}" \
+            --cluster "${{ env.PROJECT }}-cluster" \
+            --service  "${{ env.PROJECT }}-backend-svc" \
+            --task-definition "${{ steps.backend_task.outputs.arn }}" \
             --force-new-deployment \
-            --region ${{ env.AWS_REGION }} \
+            --region "${{ env.AWS_REGION }}" \
             --output text --query 'service.serviceArn'
+          echo "✓ Backend service updated"
 
-      - name: Force new frontend deployment
+      - name: Update frontend ECS service
         run: |
           aws ecs update-service \
-            --cluster "${{ needs.get-infra-outputs.outputs.ecs_cluster }}" \
-            --service "${{ needs.get-infra-outputs.outputs.frontend_svc }}" \
+            --cluster "${{ env.PROJECT }}-cluster" \
+            --service  "${{ env.PROJECT }}-frontend-svc" \
+            --task-definition "${{ steps.frontend_task.outputs.arn }}" \
             --force-new-deployment \
-            --region ${{ env.AWS_REGION }} \
+            --region "${{ env.AWS_REGION }}" \
             --output text --query 'service.serviceArn'
+          echo "✓ Frontend service updated"
 
+      # ── Wait for stable + print URL ───────────────────────
       - name: Wait for services to stabilize
         run: |
-          echo "Waiting for ECS services to stabilize..."
+          echo "Waiting for ECS tasks to be healthy (up to 10 min)..."
           aws ecs wait services-stable \
-            --cluster "${{ needs.get-infra-outputs.outputs.ecs_cluster }}" \
+            --cluster "${{ env.PROJECT }}-cluster" \
             --services \
-              "${{ needs.get-infra-outputs.outputs.backend_svc }}" \
-              "${{ needs.get-infra-outputs.outputs.frontend_svc }}" \
-            --region ${{ env.AWS_REGION }}
+              "${{ env.PROJECT }}-backend-svc" \
+              "${{ env.PROJECT }}-frontend-svc" \
+            --region "${{ env.AWS_REGION }}"
 
-      - name: Print app URL
+      - name: Print live URL
         run: |
-          echo "✅ Deployment successful!"
-          echo "🌐 App URL: ${{ needs.get-infra-outputs.outputs.frontend_url }}"
-          echo "🔌 API URL: ${{ needs.get-infra-outputs.outputs.backend_url }}"
+          ALB="${{ needs.setup.outputs.alb_dns }}"
+          echo ""
+          echo "✅ Deployment complete!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  🌐  App     : http://${ALB}"
+          echo "  🔌  API     : http://${ALB}:8000"
+          echo "  📖  Docs    : http://${ALB}:8000/docs"
+          echo "  🏷️  Tag     : ${{ needs.setup.outputs.tag }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

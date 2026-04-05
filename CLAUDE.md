@@ -5,8 +5,76 @@
 **Project Name:** KnowledgeForge AI Copilot
 **Version:** 1.0.0
 **Status:** In Development
-**Last Updated:** 2026-03-16
-**Deployment Target:** AWS (Fully Autonomous — Zero Human Intervention)
+**Last Updated:** 2026-04-05
+**Deployment Target:** AWS ECS Fargate + ECR (CI/CD via GitHub Actions)
+
+---
+
+## 0. Active Deployment
+
+| Resource | Value |
+|---|---|
+| AWS Account | 993750298110 |
+| AWS Region | us-east-1 |
+| ECS Cluster | `knowledgeforge-cluster` |
+| Frontend URL | `http://<knowledgeforge-alb>.us-east-1.elb.amazonaws.com` |
+| Backend URL | `http://<knowledgeforge-alb>.us-east-1.elb.amazonaws.com:8000` |
+| API Docs | `http://<knowledgeforge-alb>.us-east-1.elb.amazonaws.com:8000/docs` |
+| GitHub Repo | `euronone/Project-8-Enterprise-Grade-AI-Knowledge-Copilot-Chat-Voice-Docs-Video-` |
+| Deploy Branch | `feature/development` (and `main`) |
+
+> Actual ALB DNS is saved to `.aws-outputs.txt` after running `setup-aws.sh`.
+
+### Quick-start (first-time setup)
+```bash
+# 1. Fill in AWS credentials in .env
+#    AWS_ACCESS_KEY_ID=...
+#    AWS_SECRET_ACCESS_KEY=...
+
+# 2. Run one-time infrastructure creation (Git Bash)
+bash setup-aws.sh
+
+# 3. Add GitHub Secrets (repo → Settings → Secrets → Actions):
+#    AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
+#    DATABASE_URL, SECRET_KEY, OPENAI_API_KEY,
+#    TAVILY_API_KEY, ANTHROPIC_API_KEY, NEXTAUTH_SECRET
+
+# 4. Push code — pipeline auto-deploys
+git push origin feature/development
+```
+
+### CI/CD Pipeline (`.github/workflows/deploy.yml`)
+Triggers on every push to `feature/development` or `main`:
+1. **Job: setup** — reads ALB DNS, sets image tag (git SHA)
+2. **Job: build-backend** (parallel) — builds Docker image, pushes to ECR
+3. **Job: build-frontend** (parallel) — bakes `NEXT_PUBLIC_API_URL` in, pushes to ECR
+4. **Job: deploy** — registers new ECS task definitions, updates services, waits for healthy
+
+### AWS Resources Created by `setup-aws.sh`
+- **ECR**: `knowledgeforge-backend`, `knowledgeforge-frontend`
+- **ECS Cluster**: `knowledgeforge-cluster` (Fargate Spot + Fargate)
+- **ECS Services**: `knowledgeforge-backend-svc`, `knowledgeforge-frontend-svc`
+- **ALB**: `knowledgeforge-alb` (port 80 → frontend, port 8000 → backend)
+- **IAM Role**: `knowledgeforge-ecs-execution-role`
+- **Log Groups**: `/ecs/knowledgeforge-backend`, `/ecs/knowledgeforge-frontend`
+
+### Container Architecture
+| Container | Image | Port | CPU | RAM |
+|---|---|---|---|---|
+| backend | ECR `knowledgeforge-backend` | 8000 | 512 | 1024 MB |
+| redis (sidecar) | `redis:7-alpine` | 6379 | (shared) | (shared) |
+| frontend | ECR `knowledgeforge-frontend` | 3000 | 256 | 512 MB |
+
+### Local Development (still works)
+```bash
+# Frontend (dev mode, hot reload)
+cd frontend && npx next dev --turbo -p 3001
+# → http://localhost:3001
+
+# Backend
+cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8010
+# → http://localhost:8010
+```
 
 ---
 

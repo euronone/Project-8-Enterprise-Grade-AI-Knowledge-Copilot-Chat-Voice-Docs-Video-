@@ -1,0 +1,51 @@
+# ── Secrets & credentials ────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.env
+.aws-outputs.txt
+
+# ── Python ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── Node / Next.js ───────────────────────────────────────────
+node_modules/
+.next/
+out/
+.npm
+*.log
+npm-debug.log*
+
+# ── OS ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ──────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Uploads / local data ─────────────────────────────────────
+backend/uploads/
+*.sqlite
+*.db

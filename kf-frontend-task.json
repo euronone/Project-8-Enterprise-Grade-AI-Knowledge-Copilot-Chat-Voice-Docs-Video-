@@ -1,0 +1,63 @@
+{
+  "family": "knowledgeforge-frontend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::993750298110:role/knowledgeforge-ecs-execution-role",
+  "containerDefinitions": [
+    {
+      "name": "frontend",
+      "image": "993750298110.dkr.ecr.us-east-1.amazonaws.com/knowledgeforge-frontend:latest",
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "NEXT_PUBLIC_API_URL",
+          "value": "http://knowledgeforge-alb-1902264393.us-east-1.elb.amazonaws.com:8000"
+        },
+        {
+          "name": "NEXT_PUBLIC_WS_URL",
+          "value": "ws://knowledgeforge-alb-1902264393.us-east-1.elb.amazonaws.com:8000"
+        },
+        {
+          "name": "NEXT_PUBLIC_APP_URL",
+          "value": "http://knowledgeforge-alb-1902264393.us-east-1.elb.amazonaws.com"
+        },
+        {
+          "name": "NEXTAUTH_URL",
+          "value": "http://knowledgeforge-alb-1902264393.us-east-1.elb.amazonaws.com"
+        },
+        {
+          "name": "NEXTAUTH_SECRET",
+          "value": "change-me"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/knowledgeforge-frontend",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "wget -qO- http://localhost:3000 > /dev/null || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 15,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}
