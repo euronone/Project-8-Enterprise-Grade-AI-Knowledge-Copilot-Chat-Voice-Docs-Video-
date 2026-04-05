@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { signIn } from 'next-auth/react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'react-hot-toast';
 import { z } from 'zod';
@@ -39,8 +40,12 @@ export default function LoginPage() {
     }
   };
 
-  const handleOAuth = (_provider: string) => {
-    toast.error('OAuth requires backend configuration. Use email/password for local testing.');
+  const handleOAuth = async (provider: string) => {
+    try {
+      await signIn(provider, { callbackUrl: '/home' });
+    } catch {
+      toast.error('OAuth sign-in failed. Use email/password instead.');
+    }
   };
 
   return (

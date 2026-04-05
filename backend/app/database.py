@@ -1,4 +1,5 @@
 import ssl
+import socket
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
@@ -7,12 +8,19 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 def _get_connect_args():
+    args: dict = {}
     if settings.DATABASE_SSL:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-        return {"ssl": ctx}
-    return {"ssl": False}
+        args["ssl"] = ctx
+    else:
+        args["ssl"] = False
+    # Force IPv4 — avoids ENETUNREACH in ECS Fargate VPCs that have no IPv6
+    # routing. asyncpg may try the first address returned by DNS (often AAAA)
+    # which triggers an immediate "Network is unreachable" on IPv4-only hosts.
+    args["address_family"] = socket.AF_INET
+    return args
 
 engine = create_async_engine(
     settings.DATABASE_URL,
