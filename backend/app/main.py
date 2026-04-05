@@ -21,7 +21,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     logger.info("Starting KnowledgeForge API...")
-    await init_db()
+    # Make DB init non-fatal — container stays up even if DB is temporarily unreachable
+    try:
+        await init_db()
+    except Exception as exc:
+        logger.error(f"DB init failed (will retry on first request): {exc}")
 
     # ── Auto-seed demo + admin users (idempotent) ──────────────────────────
     try:
