@@ -94,9 +94,9 @@ function createApiClient(): AxiosInstance {
         }
       }
 
-      // Normalise error shape
+      // Normalise error shape — FastAPI uses `detail`, some APIs use `message`
       const apiError: ApiError = {
-        message: error.response?.data?.message ?? error.message ?? 'An unexpected error occurred',
+        message: error.response?.data?.detail ?? error.response?.data?.message ?? error.message ?? 'An unexpected error occurred',
         code: error.response?.data?.code ?? 'UNKNOWN_ERROR',
         details: error.response?.data?.details,
         statusCode: error.response?.status ?? 0,

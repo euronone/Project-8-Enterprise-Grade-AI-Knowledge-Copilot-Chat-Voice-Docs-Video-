@@ -18,7 +18,7 @@ interface ConnectorCardProps {
 const statusConfig = {
   connected: { label: 'Connected', variant: 'success' as const, icon: CheckCircle },
   disconnected: { label: 'Disconnected', variant: 'default' as const, icon: XCircle },
-  error: { label: 'Error', variant: 'danger' as const, icon: AlertCircle },
+  error: { label: 'Sync failed', variant: 'danger' as const, icon: AlertCircle },
   pending: { label: 'Pending', variant: 'warning' as const, icon: Clock },
 };
 
@@ -27,16 +27,31 @@ export function ConnectorCard({ connector }: ConnectorCardProps) {
 
   const handleSync = async () => {
     try {
-      updateConnector(connector.id, { syncStatus: 'syncing' });
-      await knowledgeApi.syncConnector(connector.id);
+      updateConnector(connector.id, { syncStatus: 'syncing', errorMessage: undefined });
+      const result = await knowledgeApi.syncConnector(connector.id);
+      const res = result as { message?: string; chunksCreated?: number };
+      const msg = res.message ?? `${connector.name} synced`;
+      // Refresh connectors list to get updated document_count from server
+      const updated = await knowledgeApi.listConnectors();
+      const fresh = updated.find((c) => c.id === connector.id);
       updateConnector(connector.id, {
         syncStatus: 'success',
         lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+        ...(fresh ? { documentCount: fresh.documentCount } : {}),
       });
-      toast.success(`${connector.name} sync started`);
-    } catch {
-      updateConnector(connector.id, { syncStatus: 'error' });
-      toast.error('Sync failed');
+      toast.success(msg);
+    } catch (err: unknown) {
+      let detail = 'Sync failed';
+      if (err && typeof err === 'object') {
+        // Axios interceptor normalizes errors into ApiError shape with .message
+        const e = err as { message?: string; statusCode?: number };
+        if (e.message && e.message !== 'An unexpected error occurred') {
+          detail = e.message;
+        }
+      }
+      updateConnector(connector.id, { syncStatus: 'error', errorMessage: detail });
+      toast.error(`Sync failed: ${detail}`);
     }
   };
 

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   ArrowUp,
+  File,
+  FileSpreadsheet,
   FileText,
   ImageIcon,
   Mic,
@@ -11,14 +13,16 @@ import {
   Square,
   X,
 } from 'lucide-react';
-import { useDropzone } from 'react-dropzone';
 
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/stores/chatStore';
 
 interface MessageInputProps {
-  onSend: (content: string, attachments?: File[]) => void;
+  onSend: (content: string) => void;
+  onAddFiles?: (files: File[]) => void;
+  onRemoveFile?: (index: number) => void;
+  attachments?: File[];
   disabled?: boolean;
   placeholder?: string;
   onAbort?: () => void;
@@ -32,10 +36,33 @@ const SLASH_COMMANDS = [
   { command: '/draft', description: 'Draft a document or email' },
 ];
 
-export function MessageInput({ onSend, disabled, placeholder, onAbort }: MessageInputProps) {
+const ACCEPT_TYPES = '.pdf,.docx,.doc,.txt,.md,.csv,.json,.xlsx,.pptx,.png,.jpg,.jpeg,.gif,.webp';
+
+function getFileIcon(file: File) {
+  if (file.type.startsWith('image/')) return <ImageIcon className="h-4 w-4 shrink-0 text-purple-400" />;
+  if (file.type === 'application/pdf') return <FileText className="h-4 w-4 shrink-0 text-red-400" />;
+  if (file.name.endsWith('.xlsx') || file.name.endsWith('.csv')) return <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-400" />;
+  if (file.name.endsWith('.docx') || file.name.endsWith('.doc')) return <FileText className="h-4 w-4 shrink-0 text-blue-400" />;
+  return <File className="h-4 w-4 shrink-0 text-surface-400" />;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function MessageInput({
+  onSend,
+  onAddFiles,
+  onRemoveFile,
+  attachments = [],
+  disabled,
+  placeholder,
+  onAbort,
+}: MessageInputProps) {
   const { streaming } = useChatStore();
   const [value, setValue] = useState('');
-  const [attachments, setAttachments] = useState<File[]>([]);
   const [showSlashCommands, setShowSlashCommands] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -59,10 +86,8 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
 
   const getSpeechRecognition = (): SpeechRecognitionCtor | null => {
     if (typeof window === 'undefined') return null;
-    return (
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition ?? null
-    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition ?? null;
   };
 
   useEffect(() => {
@@ -73,18 +98,12 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
   const startListening = useCallback(() => {
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition || isListening) return;
-
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'en-US';
-
     let baseText = '';
-
-    recognition.onstart = () => {
-      baseText = value.trimEnd();
-    };
-
+    recognition.onstart = () => { baseText = value.trimEnd(); };
     recognition.onresult = (event: { resultIndex: number; results: Array<{ isFinal: boolean; 0: { transcript: string } }> }) => {
       let interim = '';
       let final = '';
@@ -98,23 +117,10 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
       const spoken = final || interim;
       setValue(baseText ? `${baseText} ${spoken}` : spoken);
       const ta = textareaRef.current;
-      if (ta) {
-        ta.style.height = 'auto';
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
-      }
+      if (ta) { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`; }
     };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      recognitionRef.current = null;
-      textareaRef.current?.focus();
-    };
-
-    recognition.onerror = () => {
-      setIsListening(false);
-      recognitionRef.current = null;
-    };
-
+    recognition.onend = () => { setIsListening(false); recognitionRef.current = null; textareaRef.current?.focus(); };
+    recognition.onerror = () => { setIsListening(false); recognitionRef.current = null; };
     recognitionRef.current = recognition;
     recognition.start();
     setIsListening(true);
@@ -131,15 +137,8 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setValue(val);
-
-    // Auto-resize
     const ta = textareaRef.current;
-    if (ta) {
-      ta.style.height = 'auto';
-      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
-    }
-
-    // Slash commands
+    if (ta) { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`; }
     const lastWord = val.split(/\s/).pop() ?? '';
     if (lastWord.startsWith('/') && lastWord.length > 0) {
       setSlashFilter(lastWord.slice(1));
@@ -150,26 +149,18 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-    if (e.key === 'Escape') {
-      setShowSlashCommands(false);
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if (e.key === 'Escape') setShowSlashCommands(false);
   };
 
   const handleSend = useCallback(() => {
     if (!canSend || isStreaming) return;
-    onSend(value.trim(), attachments.length > 0 ? attachments : undefined);
+    onSend(value.trim());
     setValue('');
-    setAttachments([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
     setShowSlashCommands(false);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
-  }, [canSend, isStreaming, onSend, value, attachments]);
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+  }, [canSend, isStreaming, onSend, value]);
 
   const applySlashCommand = (cmd: string) => {
     const parts = value.split(/\s/);
@@ -181,11 +172,7 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (files && files.length > 0) {
-      const newFiles = Array.from(files);
-      setAttachments((prev) => [...prev, ...newFiles].slice(0, 5));
-    }
-    // Reset so same file can be selected again
+    if (files && files.length > 0) onAddFiles?.(Array.from(files));
     e.target.value = '';
   };
 
@@ -193,29 +180,16 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
     const items = Array.from(e.clipboardData.items);
     const imageItems = items.filter((item) => item.type.startsWith('image/'));
     if (imageItems.length === 0) return;
-
-    e.preventDefault(); // don't paste raw image data as text
+    e.preventDefault();
     const newFiles: File[] = [];
     imageItems.forEach((item) => {
       const blob = item.getAsFile();
       if (!blob) return;
-      // Give the pasted image a meaningful filename with a timestamp
       const ext = item.type.split('/')[1] ?? 'png';
-      const name = `screenshot-${Date.now()}.${ext}`;
-      newFiles.push(new File([blob], name, { type: item.type }));
+      newFiles.push(new File([blob], `screenshot-${Date.now()}.${ext}`, { type: item.type }));
     });
-    if (newFiles.length > 0) {
-      setAttachments((prev) => [...prev, ...newFiles].slice(0, 5));
-    }
-  }, []);
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    noClick: true,
-    noKeyboard: true,
-    onDrop: (files) => {
-      setAttachments((prev) => [...prev, ...files].slice(0, 5));
-    },
-  });
+    if (newFiles.length > 0) onAddFiles?.(newFiles);
+  }, [onAddFiles]);
 
   const filteredCommands = SLASH_COMMANDS.filter(
     (c) => !slashFilter || c.command.slice(1).startsWith(slashFilter)
@@ -223,60 +197,62 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
 
   return (
     <div className="border-t border-surface-100 bg-white p-4 dark:border-surface-800 dark:bg-surface-950">
-      {/* Attachments preview */}
+
+      {/* Attachment tabs */}
       {attachments.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-2">
           {attachments.map((file, i) => {
             const isImage = file.type.startsWith('image/');
-            const objectUrl = isImage ? URL.createObjectURL(file) : null;
+            const previewUrl = isImage ? URL.createObjectURL(file) : null;
             return (
               <div
                 key={i}
-                className="group relative flex items-center gap-1.5 rounded-md border border-surface-200 bg-surface-50 dark:border-surface-700 dark:bg-surface-800 overflow-hidden"
-              >
-                {isImage && objectUrl ? (
-                  // Image thumbnail
-                  <div className="flex items-center gap-1.5 px-1.5 py-1">
-                    <img
-                      src={objectUrl}
-                      alt={file.name}
-                      className="h-10 w-10 rounded object-cover"
-                      onLoad={() => URL.revokeObjectURL(objectUrl)}
-                    />
-                    <span className="max-w-[100px] truncate text-xs text-surface-600 dark:text-surface-400">
-                      {file.name}
-                    </span>
-                  </div>
-                ) : (
-                  // Generic file chip
-                  <div className="flex items-center gap-1.5 px-2 py-1.5">
-                    <FileText className="h-3.5 w-3.5 shrink-0 text-surface-400" />
-                    <span className="max-w-[120px] truncate text-xs text-surface-700 dark:text-surface-300">
-                      {file.name}
-                    </span>
-                  </div>
+                className={cn(
+                  'group relative flex items-center gap-2 rounded-lg border bg-white px-3 py-2',
+                  'border-surface-200 shadow-sm dark:border-surface-700 dark:bg-surface-900',
+                  'min-w-[140px] max-w-[200px]'
                 )}
+              >
+                {isImage && previewUrl ? (
+                  <img
+                    src={previewUrl}
+                    alt={file.name}
+                    className="h-8 w-8 rounded object-cover shrink-0"
+                    onLoad={() => URL.revokeObjectURL(previewUrl)}
+                  />
+                ) : (
+                  getFileIcon(file)
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-surface-800 dark:text-surface-200">
+                    {file.name}
+                  </p>
+                  <p className="text-[10px] text-surface-400">{formatBytes(file.size)}</p>
+                </div>
                 <button
-                  className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-surface-200 text-surface-600 opacity-0 transition-opacity group-hover:opacity-100 dark:bg-surface-700 dark:text-surface-300"
                   type="button"
                   title="Remove"
-                  onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                  className="ml-1 rounded-full p-0.5 text-surface-400 hover:bg-surface-100 hover:text-surface-600 dark:hover:bg-surface-800"
+                  onClick={() => onRemoveFile?.(i)}
                 >
-                  <X className="h-2.5 w-2.5" />
+                  <X className="h-3.5 w-3.5" />
                 </button>
               </div>
             );
           })}
+          <div className="flex items-center self-center text-xs text-surface-400 pl-1">
+            {attachments.length}/10 files
+          </div>
         </div>
       )}
 
-      {/* Input row — file button is OUTSIDE dropzone to avoid event conflicts */}
+      {/* Input row */}
       <div className="flex items-end gap-2">
-        {/* File attachment button — standalone, not inside dropzone */}
+        {/* File attach button */}
         <div className="shrink-0">
           <input
             ref={fileInputRef}
-            accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg"
+            accept={ACCEPT_TYPES}
             className="sr-only"
             id="chat-file-input"
             multiple
@@ -286,13 +262,13 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
           <label
             htmlFor="chat-file-input"
             className="flex cursor-pointer items-center justify-center rounded-md p-1.5 text-surface-400 hover:bg-surface-100 hover:text-surface-600 dark:hover:bg-surface-800 dark:hover:text-surface-300"
-            title="Attach file"
+            title="Attach file (up to 10)"
           >
             <Paperclip className="h-5 w-5" />
           </label>
         </div>
 
-        {/* Voice input button — hold to talk, release to stop */}
+        {/* Voice input */}
         {voiceSupported && (
           <div className="shrink-0">
             <button
@@ -315,19 +291,14 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
           </div>
         )}
 
-        {/* Dropzone + textarea + send button */}
+        {/* Textarea area */}
         <div
-          {...getRootProps()}
           className={cn(
             'relative flex flex-1 items-end gap-2 rounded-xl border border-surface-200 bg-surface-50 px-4 py-3',
-            'dark:border-surface-700 dark:bg-surface-900',
-            'transition-colors',
-            isDragActive && 'border-brand-400 bg-brand-50 dark:border-brand-600 dark:bg-brand-950'
+            'dark:border-surface-700 dark:bg-surface-900 transition-colors'
           )}
         >
-          <input {...getInputProps()} />
-
-          {/* Slash commands dropdown */}
+          {/* Slash commands */}
           {showSlashCommands && filteredCommands.length > 0 && (
             <div className="absolute bottom-full left-4 mb-2 w-72 rounded-lg border border-surface-200 bg-white shadow-lg dark:border-surface-700 dark:bg-surface-900">
               {filteredCommands.map((cmd) => (
@@ -346,15 +317,11 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
             </div>
           )}
 
-          {/* Textarea */}
           <textarea
             ref={textareaRef}
             className="flex-1 resize-none bg-transparent text-sm text-surface-900 placeholder-surface-400 focus:outline-none dark:text-surface-100"
             disabled={disabled}
-            placeholder={
-              placeholder ??
-              (isDragActive ? 'Drop files here...' : 'Ask anything… (Shift+Enter for new line, paste images with Ctrl+V)')
-            }
+            placeholder={placeholder ?? 'Ask anything… (Shift+Enter for new line, drag files or paste images)'}
             rows={1}
             value={value}
             onChange={handleChange}
@@ -362,14 +329,8 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
             onPaste={handlePaste}
           />
 
-          {/* Send / Stop */}
           {isStreaming ? (
-            <Button
-              aria-label="Stop generation"
-              size="icon-sm"
-              variant="danger"
-              onClick={onAbort}
-            >
+            <Button aria-label="Stop generation" size="icon-sm" variant="danger" onClick={onAbort}>
               <Square className="h-4 w-4 fill-current" />
             </Button>
           ) : (

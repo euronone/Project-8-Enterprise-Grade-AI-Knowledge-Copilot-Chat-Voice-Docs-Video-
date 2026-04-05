@@ -20,13 +20,18 @@ export function GoogleDriveConnectModal({ onClose }: GoogleDriveConnectModalProp
   const [saving, setSaving] = useState(false);
 
   const extractFolderId = (input: string): string => {
+    const trimmed = input.trim();
+    if (!trimmed) return 'root';
     // Handle Google Drive folder URLs like:
     // https://drive.google.com/drive/folders/FOLDER_ID
-    const m = input.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+    // https://drive.google.com/drive/u/0/folders/FOLDER_ID
+    const m = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
     if (m) return m[1];
-    // If it looks like a raw ID already
-    if (/^[a-zA-Z0-9_-]{25,}$/.test(input.trim())) return input.trim();
-    return input.trim() || 'root';
+    // If input is a generic Google Drive URL (home, starred, etc.) → use root
+    if (trimmed.includes('drive.google.com')) return 'root';
+    // If it looks like a raw folder ID already (26+ alphanumeric chars)
+    if (/^[a-zA-Z0-9_-]{25,}$/.test(trimmed)) return trimmed;
+    return 'root';
   };
 
   const handleConnect = async () => {
@@ -50,8 +55,10 @@ export function GoogleDriveConnectModal({ onClose }: GoogleDriveConnectModalProp
       try {
         const result = await knowledgeApi.syncConnector(connector.id);
         toast.success((result as { message?: string }).message ?? 'Google Drive synced!', { id: 'gdrive-sync' });
-      } catch {
-        toast.error('Connected but sync failed — try syncing manually', { id: 'gdrive-sync' });
+      } catch (syncErr: unknown) {
+        const axiosErr = syncErr as { response?: { data?: { detail?: string } }; message?: string };
+        const detail = axiosErr.response?.data?.detail ?? axiosErr.message ?? 'Sync failed';
+        toast.error(detail, { id: 'gdrive-sync' });
       }
 
       onClose();
@@ -87,11 +94,15 @@ export function GoogleDriveConnectModal({ onClose }: GoogleDriveConnectModalProp
             <p className="mb-1 font-medium">How to get a Google OAuth Access Token:</p>
             <ol className="list-decimal space-y-1 pl-4 text-xs">
               <li>Open the <strong>Google OAuth 2.0 Playground</strong> (link below)</li>
-              <li>In <em>Step 1</em>, select <strong>Drive API v3 → .../auth/drive.readonly</strong></li>
-              <li>Click <strong>Authorize APIs</strong> and sign in with your Google account</li>
-              <li>In <em>Step 2</em>, click <strong>Exchange authorization code for tokens</strong></li>
-              <li>Copy the <strong>Access token</strong> and paste it below</li>
+              <li>In <em>Step 1</em>, select <strong>Drive API v3 → .../auth/drive.readonly</strong> then click <strong>Authorize APIs</strong></li>
+              <li>Sign in with your Google account when prompted</li>
+              <li>Back in <em>Step 2</em>, click <strong>&quot;Exchange authorization code for tokens&quot;</strong></li>
+              <li>After the exchange, copy the <strong>Access token</strong> field value (starts with <code className="bg-blue-100 px-1 rounded dark:bg-blue-800">ya29.</code>)</li>
+              <li>Paste it in the field below — <em>do not paste the Authorization code</em></li>
             </ol>
+            <p className="mt-2 text-[11px] text-blue-600 dark:text-blue-400">
+              ⚠ Access tokens expire after ~1 hour. If sync fails with an auth error, repeat steps above.
+            </p>
             <a
               href="https://developers.google.com/oauthplayground/"
               target="_blank"

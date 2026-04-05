@@ -66,9 +66,9 @@ if %errorlevel% equ 0 (
     echo   API ready!
 )
 
-REM ── Step 4: Build frontend (production, only if needed) ───────
+REM ── Step 4: Install frontend deps if needed ───────────────────
 echo.
-echo [4/5] Checking frontend build...
+echo [4/5] Checking frontend dependencies...
 cd /d "%~dp0frontend"
 
 if not exist "node_modules" (
@@ -79,29 +79,20 @@ if not exist "node_modules" (
     echo   node_modules exists. [SKIP]
 )
 
-REM Build if no production build exists yet
-if not exist ".next\BUILD_ID" (
-    echo   No production build found. Building now (one-time, ~60s)...
-    npm run build
-    echo   Build complete!
-) else (
-    echo   Production build exists. [SKIP]
-)
-
-REM ── Step 5: Start frontend in production mode ─────────────────
+REM ── Step 5: Start frontend in dev mode ────────────────────────
 echo.
-echo [5/5] Starting Frontend (production mode - low RAM)...
+echo [5/5] Starting Frontend (dev mode)...
 
 netstat -an | findstr ":3001 " | findstr "LISTENING" >nul 2>&1
 if %errorlevel% equ 0 (
     echo   Frontend already running on port 3001. [SKIP]
 ) else (
-    start "KnowledgeForge Frontend" cmd /k "npm start -- --port 3001"
-    echo   Frontend starting...
+    start "KnowledgeForge Frontend" cmd /k "cd /d "%~dp0frontend" && npx next dev --turbo -p 3001"
+    echo   Frontend starting (first load may take ~15s)...
     :waitfrontend
     curl -s http://localhost:3001 >nul 2>&1
     if %errorlevel% neq 0 (
-        timeout /t 2 /nobreak >nul
+        timeout /t 3 /nobreak >nul
         goto waitfrontend
     )
     echo   Frontend ready!

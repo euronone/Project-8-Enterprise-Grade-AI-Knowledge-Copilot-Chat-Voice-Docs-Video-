@@ -103,7 +103,9 @@ export async function addConnector(payload: {
 }
 
 export async function syncConnector(connectorId: string): Promise<unknown> {
-  const { data } = await apiClient.post(`/knowledge/connectors/${connectorId}/sync`);
+  const { data } = await apiClient.post(`/knowledge/connectors/${connectorId}/sync`, null, {
+    timeout: 120_000, // 2 minutes — Drive sync downloads files from Google APIs
+  });
   return data;
 }
 

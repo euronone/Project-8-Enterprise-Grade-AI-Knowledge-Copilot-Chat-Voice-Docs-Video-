@@ -246,10 +246,9 @@ async def _openai_stream(
         openai_messages.append({"role": "system", "content": system_prompt})
     openai_messages.extend(messages_payload)
 
-    # Map Claude model names to OpenAI equivalents; use gpt-4o for vision
-    openai_model = model
-    if "claude" in model.lower():
-        openai_model = "gpt-4o-mini"
+    # Map all non-OpenAI model names to supported OpenAI equivalents
+    _OPENAI_MODELS = {"gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"}
+    openai_model = model if model in _OPENAI_MODELS else "gpt-4o-mini"
 
     # If any user message has image_url parts, upgrade to gpt-4o (vision capable)
     has_images = any(

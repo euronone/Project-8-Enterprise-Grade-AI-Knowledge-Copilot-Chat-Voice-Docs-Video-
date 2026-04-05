@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dependencies import get_current_user, get_db
-from app.models.knowledge import Collection, Connector, ConnectorStatus, Document, DocumentChunk
+from app.models.knowledge import Collection, Connector, ConnectorStatus, Document, DocumentChunk, DocumentStatus
 from app.models.user import User
 from app.schemas.chat import PaginatedResponse
 from app.schemas.knowledge import (
@@ -405,18 +405,21 @@ async def sync_connector(
         if connector.type == "figma":
             chunks_created = await _sync_figma(connector, current_user.id, db)
             connector.status = ConnectorStatus.connected
+            connector.document_count = chunks_created
             await db.flush()
             return {"message": f"Figma sync complete: {chunks_created} chunks indexed", "connectorId": str(connector_id)}
 
         if connector.type == "github":
             chunks_created = await _sync_github(connector, current_user.id, db)
             connector.status = ConnectorStatus.connected
+            connector.document_count = chunks_created
             await db.flush()
             return {"message": f"GitHub sync complete: {chunks_created} chunks indexed", "connectorId": str(connector_id)}
 
         if connector.type == "google_drive":
             chunks_created = await _sync_google_drive(connector, current_user.id, db)
             connector.status = ConnectorStatus.connected
+            connector.document_count = chunks_created
             await db.flush()
             return {"message": f"Google Drive sync complete: {chunks_created} chunks indexed", "connectorId": str(connector_id)}
 
@@ -424,11 +427,15 @@ async def sync_connector(
         connector.status = ConnectorStatus.connected
         await db.flush()
         return {"message": "Sync initiated", "connectorId": str(connector_id)}
+
+    except (ValueError, HTTPException) as exc:
+        error_msg = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        logger.warning("Connector sync config/auth error [%s]: %s", connector.type, error_msg)
+        raise HTTPException(status_code=422, detail=error_msg)
     except Exception as exc:
-        logger.exception("Connector sync failed: %s", exc)
-        connector.status = ConnectorStatus.error
-        await db.flush()
-        raise HTTPException(status_code=500, detail=str(exc))
+        error_msg = str(exc)
+        logger.exception("Connector sync failed [%s]: %s", connector.type, error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 async def _sync_figma(connector: "Connector", user_id: uuid.UUID, db: AsyncSession) -> int:
@@ -494,7 +501,7 @@ async def _sync_figma(connector: "Connector", user_id: uuid.UUID, db: AsyncSessi
         file_path=f"figma://{file_key}",
         file_type="figma",
         file_size=len("\n".join(chunks_text)),
-        status="ready",
+        status=DocumentStatus.indexed,
         word_count=sum(len(t.split()) for t in chunks_text),
     )
     db.add(doc)
@@ -654,7 +661,7 @@ async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSess
         file_path=f"github://{owner}/{repo}",
         file_type="github",
         file_size=sum(len(t) for t in chunks_text),
-        status="ready",
+        status=DocumentStatus.indexed,
         word_count=sum(len(t.split()) for t in chunks_text),
     )
     db.add(doc)
@@ -688,24 +695,39 @@ async def _sync_google_drive(connector: "Connector", user_id: uuid.UUID, db: Asy
 
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    # MIME types that can be exported as plain text
+    # Google Workspace files — export to plain text
     EXPORT_TYPES: Dict[str, str] = {
         "application/vnd.google-apps.document": "text/plain",
         "application/vnd.google-apps.spreadsheet": "text/csv",
         "application/vnd.google-apps.presentation": "text/plain",
+        "application/vnd.google-apps.drawing": "text/plain",
+        "application/vnd.google-apps.script": "application/json",
     }
-    # MIME types we can download directly
-    DIRECT_TYPES = {"text/plain", "text/markdown", "application/json", "text/csv"}
+    # Binary/text files that can be downloaded directly
+    DIRECT_TYPES = {
+        "text/plain", "text/markdown", "text/csv", "text/html",
+        "application/json", "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/msword",
+    }
+    # Types to skip entirely (images, videos, folders, etc.)
+    SKIP_PREFIXES = ("image/", "video/", "audio/", "application/vnd.google-apps.folder")
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        # Verify token & list files in the folder
+    async with httpx.AsyncClient(timeout=60) as client:
+        # List ALL files the user can see (not just in a specific folder if root)
+        query = "trashed=false and mimeType != 'application/vnd.google-apps.folder'"
+        if folder_id != "root":
+            query = f"'{folder_id}' in parents and trashed=false"
+
         list_resp = await client.get(
             "https://www.googleapis.com/drive/v3/files",
             headers=headers,
             params={
-                "q": f"'{folder_id}' in parents and trashed=false",
-                "fields": "files(id,name,mimeType,size)",
-                "pageSize": "50",
+                "q": query,
+                "fields": "files(id,name,mimeType,size,modifiedTime)",
+                "pageSize": "100",
+                "orderBy": "modifiedTime desc",
             },
         )
         if list_resp.status_code == 401:
@@ -716,7 +738,7 @@ async def _sync_google_drive(connector: "Connector", user_id: uuid.UUID, db: Asy
         files_data = list_resp.json().get("files", [])
 
         if not files_data:
-            raise ValueError("No files found in the specified Google Drive folder")
+            return 0
 
         chunks_text: List[str] = []
         folder_name = folder_id
@@ -726,6 +748,10 @@ async def _sync_google_drive(connector: "Connector", user_id: uuid.UUID, db: Asy
             file_name = file["name"]
             mime = file.get("mimeType", "")
 
+            # Skip unsupported types
+            if any(mime.startswith(p) for p in SKIP_PREFIXES):
+                continue
+
             try:
                 if mime in EXPORT_TYPES:
                     export_resp = await client.get(
@@ -734,16 +760,16 @@ async def _sync_google_drive(connector: "Connector", user_id: uuid.UUID, db: Asy
                         params={"mimeType": EXPORT_TYPES[mime]},
                     )
                     if export_resp.status_code == 200:
-                        content = export_resp.text[:5000]
+                        content = export_resp.text[:8000]
                         if content.strip():
                             chunks_text.append(f"[{file_name}]\n{content.strip()}")
-                elif mime in DIRECT_TYPES:
+                elif mime in DIRECT_TYPES or mime.startswith("text/"):
                     dl_resp = await client.get(
                         f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media",
                         headers=headers,
                     )
                     if dl_resp.status_code == 200:
-                        content = dl_resp.text[:5000]
+                        content = dl_resp.text[:8000]
                         if content.strip():
                             chunks_text.append(f"[{file_name}]\n{content.strip()}")
             except Exception:
@@ -769,7 +795,7 @@ async def _sync_google_drive(connector: "Connector", user_id: uuid.UUID, db: Asy
         file_path=f"gdrive://{folder_id}",
         file_type="google_drive",
         file_size=sum(len(t) for t in chunks_text),
-        status="ready",
+        status=DocumentStatus.indexed,
         word_count=sum(len(t.split()) for t in chunks_text),
     )
     db.add(doc)

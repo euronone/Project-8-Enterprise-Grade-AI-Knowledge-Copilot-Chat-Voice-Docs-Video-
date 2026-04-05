@@ -95,11 +95,15 @@ class ConnectorOut(BaseModel):
     lastSyncAt: Optional[datetime] = None
     documentCount: int
     config: Any
+    errorMessage: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
     @classmethod
     def from_orm(cls, connector) -> "ConnectorOut":
+        cfg = connector.config or {}
+        # Strip sensitive credentials from the returned config
+        safe_cfg = {k: v for k, v in cfg.items() if k not in ("accessToken", "token", "apiKey")}
         return cls(
             id=connector.id,
             type=connector.type,
@@ -107,7 +111,8 @@ class ConnectorOut(BaseModel):
             status=connector.status.value if hasattr(connector.status, "value") else connector.status,
             lastSyncAt=connector.last_sync_at,
             documentCount=connector.document_count,
-            config=connector.config or {},
+            config=safe_cfg,
+            errorMessage=None,
         )
 
 

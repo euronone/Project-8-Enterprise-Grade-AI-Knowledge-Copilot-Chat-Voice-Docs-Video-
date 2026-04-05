@@ -3,11 +3,7 @@ export type MessageRole = 'user' | 'assistant' | 'system';
 export type AIModel =
   | 'gpt-4o'
   | 'gpt-4o-mini'
-  | 'gpt-4-turbo'
-  | 'claude-3-5-sonnet'
-  | 'claude-3-haiku'
-  | 'gemini-pro'
-  | 'llama-3-70b';
+  | 'gpt-4-turbo';
 
 export interface AIModelInfo {
   id: AIModel;
@@ -92,6 +88,7 @@ export interface SendMessagePayload {
   attachmentIds?: string[];
   systemPrompt?: string;
   images?: string[]; // base64 data URIs for vision (e.g. "data:image/png;base64,...")
+  messageAttachments?: MessageAttachment[];
 }
 
 export interface StreamingChunk {

@@ -84,7 +84,7 @@ export function useStreamingMessage() {
         content: payload.content,
         sources: [],
         createdAt: new Date().toISOString(),
-        attachments: [],
+        attachments: payload.messageAttachments ?? [],
       };
       addMessage(payload.conversationId, userMessage);
 
